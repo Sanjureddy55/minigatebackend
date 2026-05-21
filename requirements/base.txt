@@ -3,7 +3,9 @@ djangorestframework>=3.14
 djangorestframework-simplejwt>=5.3
 django-cors-headers>=4.3
 django-environ>=0.11
+django-filter>=23.0          # Querystring filtering for DRF — module name: django_filters
 psycopg2-binary>=2.9
 redis>=5.0
 celery>=5.3
 Pillow>=10.0
+

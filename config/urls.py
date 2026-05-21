@@ -1,12 +1,20 @@
 """Root URL configuration for society_platform."""
+from django.conf import settings
 from django.contrib import admin
 from django.urls import include, path
 
 urlpatterns = [
     path("admin/", admin.site.urls),
 
-    # ── Accounts & Authentication ──────────────────────────────────────────
-    path("api/auth/", include("apps.accounts.urls")),
+    # ── Django Debug Toolbar ───────────────────────────────────────────────────
+    # Must be registered here so the 'djdt' URL namespace exists.
+    # The guard ensures this path is NEVER present in production
+    # (DEBUG=False means debug_toolbar is not even in INSTALLED_APPS there).
+    *([path("__debug__/", include("debug_toolbar.urls"))] if settings.DEBUG else []),
+
+    # ── Auth / Onboarding / RBAC ──────────────────────────────────────────
+    path("api/accounts/",          include("apps.accounts.urls")),
+    path("api/roles-permissions/", include("apps.roles_permissions.urls")),
 
     # ── Super Admin (platform_admin) ───────────────────────────────────────
     path("api/platform-admin/dashboard/",           include("apps.platform_admin.dashboard.urls")),
