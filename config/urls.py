@@ -32,9 +32,14 @@ urlpatterns = [
     path("api/society-admin/maintenance-expenses/", include("apps.society_admin.maintenance_expenses.urls")),
     path("api/society-admin/monthly-statements/",   include("apps.society_admin.monthly_statements.urls")),
     path("api/society-admin/analytics/",            include("apps.society_admin.analytics.urls")),
-    path("api/society-admin/roles-access/",         include("apps.society_admin.roles_access.urls")),
-    path("api/society-admin/notifications/",        include("apps.society_admin.notifications.urls")),
-    path("api/society-admin/settings/",             include("apps.society_admin.settings.urls")),
+    path("api/society-admin/roles-access/",          include("apps.society_admin.roles_access.urls")),
+    path("api/society-admin/notifications/",         include("apps.society_admin.notifications.urls")),
+    path("api/society-admin/settings/",              include("apps.society_admin.settings.urls")),
+    path("api/society-admin/residents/",             include("apps.society_admin.residents.urls")),      # Resident management
+    path("api/society-admin/visitors/",              include("apps.society_admin.visitors.urls")),       # Visitor management
+    path("api/society-admin/approvals/",             include("apps.society_admin.approvals.urls")),      # Approval workflows
+    path("api/society-admin/security/",              include("apps.society_admin.security.urls")),       # Security oversight
+    path("api/society-admin/audit-logs/",            include("apps.society_admin.audit_logs.urls")),     # Audit trail & logs
 
     # ── Resident ──────────────────────────────────────────────────────────
     path("api/resident/dashboard/",  include("apps.resident.dashboard.urls")),

@@ -76,6 +76,11 @@ LOCAL_ROLE_APPS = [
     "apps.society_admin.roles_access",
     "apps.society_admin.notifications",
     "apps.society_admin.settings",
+    "apps.society_admin.residents",        # Resident management
+    "apps.society_admin.visitors",         # Visitor management
+    "apps.society_admin.approvals",        # Approval workflows
+    "apps.society_admin.security",         # Security oversight
+    "apps.society_admin.audit_logs",       # Audit trail & logs
     # ── Resident ──────────────────────────────────────────────
     "apps.resident.dashboard",
     "apps.resident.complaints",
