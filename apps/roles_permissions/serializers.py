@@ -234,8 +234,8 @@ class SuperAdminSetupSerializer(serializers.Serializer):
 class UserProfileSerializer(serializers.ModelSerializer):
     email              = serializers.EmailField(source="user.email", read_only=True)
     username           = serializers.CharField(source="user.username", read_only=True)
-    role_name          = serializers.CharField(source="role.name", read_only=True, allow_null=True)
-    role_type          = serializers.CharField(source="role.role_type", read_only=True, allow_null=True)
+    role               = serializers.SerializerMethodField()
+    society            = serializers.SerializerMethodField()
     module_permissions = ModulePermissionSerializer(
         source="role.module_permissions", many=True, read_only=True
     )
@@ -244,8 +244,30 @@ class UserProfileSerializer(serializers.ModelSerializer):
         model  = UserProfile
         fields = [
             "id", "username", "email", "full_name", "mobile",
-            "status", "description", "role", "role_name", "role_type",
+            "status", "description", "role",
             "society", "flat_number", "module_permissions",
             "created_at", "updated_at",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
+
+    def get_role(self, obj):
+        r = obj.role
+        if not r:
+            return None
+        return {
+            "id":        r.pk,
+            "name":      r.name,
+            "slug":      r.slug,
+            "role_type": r.role_type,
+        }
+
+    def get_society(self, obj):
+        s = obj.society
+        if not s:
+            return None
+        return {
+            "id":   s.pk,
+            "name": s.name,
+            "city": s.city.name if s.city_id else None,
+            "plan": s.plan,
+        }

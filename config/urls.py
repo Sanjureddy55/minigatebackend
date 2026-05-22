@@ -50,12 +50,14 @@ urlpatterns = [
     path("api/society-admin/audit-logs/",            include("apps.society_admin.audit_logs.urls")),     # Audit trail & logs
 
     # ── Resident ──────────────────────────────────────────────────────────
-    path("api/resident/dashboard/",  include("apps.resident.dashboard.urls")),
-    path("api/resident/complaints/", include("apps.resident.complaints.urls")),
-    path("api/resident/payments/",   include("apps.resident.payments.urls")),
-    path("api/resident/notices/",    include("apps.resident.notices.urls")),
-    path("api/resident/visitors/",   include("apps.resident.visitors.urls")),
-    path("api/resident/profile/",    include("apps.resident.profile.urls")),
+    path("api/resident/dashboard/",               include("apps.resident.dashboard.urls")),
+    path("api/resident/complaints/",              include("apps.resident.complaints.urls")),
+    path("api/resident/payments/",                include("apps.resident.payments.urls")),
+    path("api/resident/notices/",                 include("apps.resident.notices.urls")),
+    path("api/resident/visitors/",                include("apps.resident.visitors.urls")),
+    path("api/resident/profile/",                 include("apps.resident.profile.urls")),
+    path("api/resident/sos/",                     include("apps.resident.sos.urls")),
+    path("api/resident/maintenance-transparency/",include("apps.resident.maintenance_transparency.urls")),
 
     # ── Security Guard ────────────────────────────────────────────────────
     path("api/security-guard/dashboard/",        include("apps.security_guard.dashboard.urls")),

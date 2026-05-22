@@ -1,3 +1,7 @@
 from django.urls import path
 
-urlpatterns = []
+from .views import SocietySettingsView
+
+urlpatterns = [
+    path("", SocietySettingsView.as_view(), name="society-settings"),
+]

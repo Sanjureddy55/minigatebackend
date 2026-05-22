@@ -5,6 +5,7 @@ from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.response import Response
+from apps.common.permissions import IsSuperAdmin
 
 from .filters import SocietyFilter
 from .models import Society
@@ -21,13 +22,13 @@ class SocietyViewSet(viewsets.ModelViewSet):
 
     All endpoints live under /api/platform-admin/create-society/
 
-        GET    societies/                    → list (filterable, searchable, orderable)
-        POST   societies/                    → create
-        GET    societies/{id}/               → retrieve
-        PUT    societies/{id}/               → full update
-        PATCH  societies/{id}/               → partial update
-        DELETE societies/{id}/               → destroy
-        PATCH  societies/{id}/toggle-status/ → flip Active ↔ Inactive
+        GET    societies/                    list (filterable, searchable, orderable)
+        POST   societies/                    create
+        GET    societies/{id}/               retrieve
+        PUT    societies/{id}/               full update
+        PATCH  societies/{id}/               partial update
+        DELETE societies/{id}/               destroy
+        PATCH  societies/{id}/toggle-status/ flip Active <-> Inactive
 
     Supported query parameters for GET /societies/:
         ?status=active          filter by status (active | inactive)
@@ -40,10 +41,8 @@ class SocietyViewSet(viewsets.ModelViewSet):
         ?ordering=name          sort ascending; -name for descending
     """
 
+    permission_classes = [IsSuperAdmin]
     serializer_class = SocietySerializer
-    # No permission enforcement during the planning phase.
-    # AllowAny is already the global default in settings REST_FRAMEWORK.
-    permission_classes = []
 
     # DjangoFilterBackend drives declarative filtering via SocietyFilter.
     # SearchFilter and OrderingFilter are scoped explicitly to this ViewSet
@@ -52,7 +51,7 @@ class SocietyViewSet(viewsets.ModelViewSet):
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
 
     # SearchFilter searches across these model fields with ?search=<term>
-    search_fields = ["name", "city", "admin_email"]
+    search_fields = ["name", "city__name", "admin_email"]
 
     # OrderingFilter allows ?ordering=name,-created_at etc.
     ordering_fields = ["name", "city", "plan", "status", "created_at", "total_flats"]

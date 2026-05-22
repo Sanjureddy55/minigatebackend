@@ -5,8 +5,11 @@ from .models import Society
 
 class SocietySerializer(serializers.ModelSerializer):
     # Human-readable labels derived from TextChoices — always in sync with the model.
-    plan_display = serializers.CharField(source="get_plan_display", read_only=True)
+    plan_display   = serializers.CharField(source="get_plan_display",   read_only=True)
     status_display = serializers.CharField(source="get_status_display", read_only=True)
+
+    # City name for table display
+    city_name = serializers.CharField(source="city.name", read_only=True, allow_null=True)
 
     # Convenience read-only field; avoids a second query when FKs are select_related.
     society_admin_email = serializers.EmailField(
@@ -22,7 +25,7 @@ class SocietySerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "name",
-            "city",
+            "city", "city_name",
             "total_flats",
             "plan",
             "plan_display",

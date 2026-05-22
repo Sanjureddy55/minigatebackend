@@ -1,3 +1,3 @@
 from django.contrib import admin
 
-# TODO: Register society_admin_dashboard models
+# Society Admin Dashboard has no models of its own — it aggregates from other apps.

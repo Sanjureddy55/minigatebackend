@@ -1,3 +1,7 @@
 from django.urls import path
 
-urlpatterns = []
+from .views import SystemSettingsView
+
+urlpatterns = [
+    path("", SystemSettingsView.as_view(), name="system-settings"),
+]

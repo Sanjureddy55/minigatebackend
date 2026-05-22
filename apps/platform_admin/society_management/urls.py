@@ -1,3 +1,11 @@
-from django.urls import path
+from django.urls import include, path
+from rest_framework.routers import DefaultRouter
 
-urlpatterns = []
+from .views import SocietyManagementViewSet
+
+router = DefaultRouter()
+router.register(r"", SocietyManagementViewSet, basename="society-management")
+
+urlpatterns = [
+    path("", include(router.urls)),
+]

@@ -110,6 +110,8 @@ LOCAL_ROLE_APPS = [
     "apps.resident.notices",
     "apps.resident.visitors",
     "apps.resident.profile",
+    "apps.resident.sos",
+    "apps.resident.maintenance_transparency",
     # ── Security Guard ────────────────────────────────────────────────────
     "apps.security_guard.dashboard",
     "apps.security_guard.gate_entry",
@@ -291,11 +293,16 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # =============================================================================
 REST_FRAMEWORK = {
     # ── Authentication ─────────────────────────────────────────────────────
-    "DEFAULT_AUTHENTICATION_CLASSES": [],           # No auth during scaffolding phase
+    # JWT is active: when a Bearer token is present it sets request.user.
+    # Global permission is still AllowAny so unauthenticated endpoints work.
+    # Individual views that require login set permission_classes = [IsAuthenticated].
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
+    ],
 
     # ── Permissions ────────────────────────────────────────────────────────
     "DEFAULT_PERMISSION_CLASSES": [
-        "rest_framework.permissions.AllowAny",      # Open access during scaffolding
+        "rest_framework.permissions.IsAuthenticated",
     ],
 
     # ── Parsers — what request Content-Types are accepted ──────────────────
@@ -330,6 +337,25 @@ REST_FRAMEWORK = {
     #     "rest_framework.throttling.UserRateThrottle",
     # ],
     # "DEFAULT_THROTTLE_RATES": {"anon": "100/day", "user": "1000/day"},
+}
+
+# =============================================================================
+# SIMPLE JWT
+# Access token is short-lived (1 day during dev; use 15 min in production).
+# Refresh token is valid for 30 days and can issue new access tokens.
+# =============================================================================
+from datetime import timedelta
+
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME":  timedelta(days=1),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=30),
+    "ROTATE_REFRESH_TOKENS":  True,
+    "BLACKLIST_AFTER_ROTATION": False,
+    "UPDATE_LAST_LOGIN": True,
+    "ALGORITHM": "HS256",
+    "AUTH_HEADER_TYPES": ("Bearer",),
+    "AUTH_TOKEN_CLASSES": ("rest_framework_simplejwt.tokens.AccessToken",),
+    "TOKEN_OBTAIN_SERIALIZER": "rest_framework_simplejwt.serializers.TokenObtainPairSerializer",
 }
 
 # =============================================================================

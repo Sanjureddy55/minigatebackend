@@ -1,5 +1,6 @@
 from django.contrib.auth import authenticate, get_user_model
 from rest_framework import serializers
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.platform_admin.create_society.models import Society
 from apps.roles_permissions.models import UserProfile
@@ -7,6 +8,12 @@ from apps.roles_permissions.models import UserProfile
 from .models import City, Country, OTPRecord
 
 User = get_user_model()
+
+
+def get_tokens_for_user(user) -> dict:
+    """Return a fresh access + refresh JWT pair for the given user."""
+    refresh = RefreshToken.for_user(user)
+    return {"refresh": str(refresh), "access": str(refresh.access_token)}
 
 
 # ── OTP ───────────────────────────────────────────────────────────────────────
@@ -116,7 +123,7 @@ class OnboardingCreateSerializer(serializers.Serializer):
             full_name=full_name,
             society=society,
             flat_number=flat_number,
-            status=UserProfile.Status.ACTIVE,
+            status=UserProfile.Status.PENDING,  # Awaiting Society Admin approval
         )
         return profile
 

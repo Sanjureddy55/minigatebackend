@@ -1,3 +1,3 @@
 from django.contrib import admin
 
-# TODO: Register society_admin_payments models
+# Society Admin Payments has no models of its own — it reads from resident_payments.

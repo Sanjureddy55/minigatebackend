@@ -28,8 +28,10 @@ class Module(models.TextChoices):
 
 
 class RoleType(models.TextChoices):
-    ADMIN       = "admin",       _("Admin")
-    OPERATIONAL = "operational", _("Operational")
+    ADMIN         = "admin",         _("Administrative")
+    OPERATIONAL   = "operational",   _("Operational")
+    RESIDENT      = "resident",      _("Resident")
+    EXTERNAL      = "external",      _("External")
 
 
 class Role(models.Model):
@@ -96,6 +98,7 @@ class UserProfile(models.Model):
     """
 
     class Status(models.TextChoices):
+        PENDING  = "pending",  _("Pending Approval")
         ACTIVE   = "active",   _("Active")
         INACTIVE = "inactive", _("Inactive")
 

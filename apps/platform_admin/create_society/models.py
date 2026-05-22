@@ -18,15 +18,23 @@ class Society(models.Model):
         ENTERPRISE = "enterprise", _("Enterprise")
 
     class Status(models.TextChoices):
-        ACTIVE = "active", _("Active")
-        INACTIVE = "inactive", _("Inactive")
+        ACTIVE    = "active",    _("Active")
+        PENDING   = "pending",   _("Pending")
+        SUSPENDED = "suspended", _("Suspended")
+        INACTIVE  = "inactive",  _("Inactive")
 
     name = models.CharField(
         max_length=255,
         unique=True,
         help_text="Unique display name of the society.",
     )
-    city = models.CharField(max_length=100)
+    city = models.ForeignKey(
+        "accounts.City",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="societies",
+    )
     # Stores expected flat count; actual flats are tracked via Flat FK.
     total_flats = models.PositiveIntegerField(
         default=0,
@@ -67,8 +75,9 @@ class Society(models.Model):
         indexes = [
             models.Index(fields=["status"]),
             models.Index(fields=["plan"]),
-            models.Index(fields=["city"]),
+            models.Index(fields=["city_id"]),
         ]
 
     def __str__(self) -> str:
-        return f"{self.name} ({self.city})"
+        city = self.city.name if self.city_id else ""
+        return f"{self.name} ({city})"

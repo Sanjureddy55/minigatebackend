@@ -1,3 +1,4 @@
 from django.contrib import admin
 
-# TODO: Register society_admin_residents models
+# Society Admin residents app has no models of its own.
+# UserProfile is registered in apps/roles_permissions/admin.py.
