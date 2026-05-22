@@ -6,6 +6,7 @@ from django.db import migrations
 class Migration(migrations.Migration):
 
     dependencies = [
+        ('roles_permissions', '0002_alter_role_role_type'),
         ('roles_permissions', '0002_userprofile_created_by'),
         ('roles_permissions', '0003_alter_userprofile_status'),
     ]

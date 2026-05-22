@@ -11,7 +11,7 @@ class Migration(migrations.Migration):
     dependencies = [
         ('platform_admin_create_society', '0003_remove_society_platform_ad_city_cff0f1_idx_and_more'),
         ('roles_permissions', '0001_initial'),
-        ('society_admin_buildings', '0003_remove_building_building_society_name_uniq_and_more'),
+        ('society_admin_buildings', '0001_initial'),
     ]
 
     operations = [

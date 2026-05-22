@@ -75,7 +75,7 @@ class SocietyAnalyticsView(APIView):
         }
 
         # ── Monthly Collection Trend (last 6 months) ─────────────────────────
-        six_months_ago = date(today.year, today.month, 1) - timedelta(days=180)
+        six_months_ago = timezone.now() - timedelta(days=180)
         collection_trend = list(
             MaintenanceDue.objects
             .filter(

@@ -7,7 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('society_admin_buildings', '0003_remove_building_building_society_name_uniq_and_more'),
+        ('society_admin_buildings', '0001_initial'),
         ('society_admin_flats', '0002_remove_flat_flat_building_number_uniq_and_more'),
     ]
 
