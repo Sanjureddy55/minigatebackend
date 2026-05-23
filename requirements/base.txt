@@ -9,3 +9,7 @@ redis>=5.0
 celery>=5.3
 Pillow>=10.0
 
+# ── Document generation ───────────────────────────────────────────────────────
+reportlab>=4.0               # PDF generation (receipts, statements, reports)
+openpyxl>=3.1                # Excel export (.xlsx) for monthly statements
+

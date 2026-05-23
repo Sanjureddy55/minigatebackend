@@ -1,3 +1,6 @@
 from django.urls import path
+from .views import FinancialReportsView
 
-urlpatterns = []
+urlpatterns = [
+    path("", FinancialReportsView.as_view(), name="accountant-financial-reports"),
+]

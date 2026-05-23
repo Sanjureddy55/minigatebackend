@@ -112,6 +112,7 @@ LOCAL_ROLE_APPS = [
     "apps.resident.profile",
     "apps.resident.sos",
     "apps.resident.maintenance_transparency",
+    "apps.resident.monthly_statements",
     # ── Security Guard ────────────────────────────────────────────────────
     "apps.security_guard.dashboard",
     "apps.security_guard.gate_entry",
@@ -120,12 +121,18 @@ LOCAL_ROLE_APPS = [
     "apps.security_guard.emergency_alerts",
     "apps.security_guard.shift_management",
     # ── Accountant ────────────────────────────────────────────────────────
+    # ── Accountant: BILLING ────────────────────────────────────────────────────
     "apps.accountant.dashboard",
     "apps.accountant.payment_collection",
-    "apps.accountant.expense_tracking",
-    "apps.accountant.invoices",
-    "apps.accountant.financial_reports",
+    "apps.accountant.track_payments",
+    # ── Accountant: MAINTENANCE FUNDS ──────────────────────────────────────────
+    "apps.accountant.fund_dashboard",
+    "apps.accountant.maintenance_expenses",
     "apps.accountant.monthly_statements",
+    # ── Accountant: REPORTS ────────────────────────────────────────────────────
+    "apps.accountant.generate_receipts",
+    "apps.accountant.payment_reports",
+    "apps.accountant.export_reports",
     # ── Maintenance Staff ─────────────────────────────────────────────────
     "apps.maintenance_staff.dashboard",
     "apps.maintenance_staff.assigned_tasks",

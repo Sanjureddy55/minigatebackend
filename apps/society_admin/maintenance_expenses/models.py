@@ -4,7 +4,7 @@ from django.utils.translation import gettext_lazy as _
 
 class MaintenanceExpense(models.Model):
     """
-    Society-level maintenance expense recorded by Society Admin.
+    Society-level maintenance expense recorded by Society Admin or Accountant.
 
     When is_published=True, residents can see it via the Maintenance
     Transparency endpoint along with the proof document.
@@ -22,6 +22,13 @@ class MaintenanceExpense(models.Model):
         ADMINISTRATIVE= "administrative",_("Administrative")
         OTHER         = "other",         _("Other")
 
+    class PaymentMode(models.TextChoices):
+        UPI           = "upi",           _("UPI")
+        CASH          = "cash",          _("Cash")
+        CHEQUE        = "cheque",        _("Cheque")
+        BANK_TRANSFER = "bank_transfer", _("Bank Transfer")
+        ONLINE        = "online",        _("Online")
+
     society      = models.ForeignKey(
         "platform_admin_create_society.Society",
         on_delete=models.CASCADE,
@@ -30,10 +37,15 @@ class MaintenanceExpense(models.Model):
     title        = models.CharField(max_length=255)
     category     = models.CharField(max_length=20, choices=Category.choices, default=Category.OTHER)
     amount       = models.DecimalField(max_digits=12, decimal_places=2)
-    vendor_name  = models.CharField(max_length=200, blank=True, default="")
-    proof_url    = models.CharField(max_length=500, blank=True, default="", help_text="URL to invoice/receipt document.")
-    expense_date = models.DateField()
-    is_published = models.BooleanField(default=False, help_text="Published expenses are visible to residents.")
+    vendor_name    = models.CharField(max_length=200, blank=True, default="")
+    payment_mode   = models.CharField(
+        max_length=20, choices=PaymentMode.choices, default=PaymentMode.UPI, blank=True,
+    )
+    invoice_number = models.CharField(max_length=100, blank=True, default="", help_text="Invoice / bill reference number.")
+    building_area  = models.CharField(max_length=200, blank=True, default="", help_text="Building or common area (e.g. Tower A, Common Area).")
+    proof_url      = models.CharField(max_length=500, blank=True, default="", help_text="URL or filename of invoice/receipt document.")
+    expense_date   = models.DateField()
+    is_published   = models.BooleanField(default=False, help_text="Published expenses are visible to residents.")
     created_by   = models.ForeignKey(
         "roles_permissions.UserProfile",
         on_delete=models.SET_NULL,

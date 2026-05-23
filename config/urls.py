@@ -58,6 +58,7 @@ urlpatterns = [
     path("api/resident/profile/",                 include("apps.resident.profile.urls")),
     path("api/resident/sos/",                     include("apps.resident.sos.urls")),
     path("api/resident/maintenance-transparency/",include("apps.resident.maintenance_transparency.urls")),
+    path("api/resident/monthly-statements/",      include("apps.resident.monthly_statements.urls")),
 
     # ── Security Guard ────────────────────────────────────────────────────
     path("api/security-guard/dashboard/",        include("apps.security_guard.dashboard.urls")),
@@ -68,12 +69,18 @@ urlpatterns = [
     path("api/security-guard/shift-management/", include("apps.security_guard.shift_management.urls")),
 
     # ── Accountant ────────────────────────────────────────────────────────
-    path("api/accountant/dashboard/",          include("apps.accountant.dashboard.urls")),
-    path("api/accountant/payment-collection/", include("apps.accountant.payment_collection.urls")),
-    path("api/accountant/expense-tracking/",   include("apps.accountant.expense_tracking.urls")),
-    path("api/accountant/invoices/",           include("apps.accountant.invoices.urls")),
-    path("api/accountant/financial-reports/",  include("apps.accountant.financial_reports.urls")),
-    path("api/accountant/monthly-statements/", include("apps.accountant.monthly_statements.urls")),
+    # ── Accountant: BILLING ───────────────────────────────────────────────────
+    path("api/accountant/dashboard/",           include("apps.accountant.dashboard.urls")),
+    path("api/accountant/payment-collection/",  include("apps.accountant.payment_collection.urls")),
+    path("api/accountant/track-payments/",      include("apps.accountant.track_payments.urls")),
+    # ── Accountant: MAINTENANCE FUNDS ─────────────────────────────────────────
+    path("api/accountant/fund-dashboard/",      include("apps.accountant.fund_dashboard.urls")),
+    path("api/accountant/maintenance-expenses/",include("apps.accountant.maintenance_expenses.urls")),
+    path("api/accountant/monthly-statements/",  include("apps.accountant.monthly_statements.urls")),
+    # ── Accountant: REPORTS ───────────────────────────────────────────────────
+    path("api/accountant/generate-receipts/",   include("apps.accountant.generate_receipts.urls")),
+    path("api/accountant/payment-reports/",     include("apps.accountant.payment_reports.urls")),
+    path("api/accountant/export-reports/",      include("apps.accountant.export_reports.urls")),
 
     # ── Maintenance Staff ─────────────────────────────────────────────────
     path("api/maintenance-staff/dashboard/",        include("apps.maintenance_staff.dashboard.urls")),

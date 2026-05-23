@@ -177,7 +177,18 @@ class SocietyRoleViewSet(viewsets.ModelViewSet):
             "SOCIETY_ASSIGN_USER_ATTEMPT | role=%s email='%s' by=%s",
             role.name, request.data.get("email", "—"), request.user,
         )
+        # Auto-inject society from the requesting society admin's profile.
+        # This ensures accountant/staff accounts are always scoped to the
+        # same society as the admin who created them — no manual society param needed.
+        try:
+            admin_society_id = request.user.profile.society_id
+        except Exception:
+            admin_society_id = None
+
         data = {**request.data, "role": role.pk}
+        if admin_society_id and not data.get("society"):
+            data["society"] = admin_society_id
+
         serializer = SocietyAssignUserSerializer(data=data)
         serializer.is_valid(raise_exception=True)
         profile = serializer.save()

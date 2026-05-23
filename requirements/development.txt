@@ -5,3 +5,4 @@ pytest>=7.4
 pytest-django>=4.7
 factory-boy>=3.3
 coverage>=7.3
+requests>=2.31               # HTTP client used by test_api_e2e.py
