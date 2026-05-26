@@ -94,3 +94,47 @@ class IsAccountant(BasePermission):
         if not request.user or not request.user.is_authenticated:
             return False
         return _get_role_slug(request) in ("accountant", "society-admin", "super-admin")
+
+
+class IsMaintenanceStaff(BasePermission):
+    """Maintenance Staff role."""
+
+    message = "Access denied. Maintenance Staff role required."
+
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        return _get_role_slug(request) in ("maintenance-staff", "society-admin", "super-admin")
+
+
+class IsSupportStaff(BasePermission):
+    """Support Staff role."""
+
+    message = "Access denied. Support Staff role required."
+
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        return _get_role_slug(request) in ("support-staff", "society-admin", "super-admin")
+
+
+class IsDeliveryPartner(BasePermission):
+    """Delivery Partner role."""
+
+    message = "Access denied. Delivery Partner role required."
+
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        return _get_role_slug(request) in ("delivery-partner", "delivery", "society-admin", "super-admin")
+
+
+class IsGuestUser(BasePermission):
+    """Guest User role."""
+
+    message = "Access denied. Guest User role required."
+
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        return _get_role_slug(request) in ("guest-user", "guest", "society-admin", "super-admin")

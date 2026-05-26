@@ -212,14 +212,83 @@ APIS = [
 
     # ── RESIDENT — SOS ────────────────────────────────────────────────────────
     ("Resident", "SOS Alert",                  "POST", f"{BASE}/api/resident/sos/",                                            "Bearer", "Resident",      '{"society","message"}',               "Send emergency SOS alert"),
+
+    # ── SECURITY GUARD — Dashboard ────────────────────────────────────────────
+    ("Security Guard", "Guard Dashboard",           "GET",  f"{BASE}/api/security-guard/dashboard/",                              "Bearer", "Security Guard", "",                                   "4 KPI cards: in_today, out_today, at_gate, alerts + shift info"),
+
+    # ── SECURITY GUARD — Gate Entry ───────────────────────────────────────────
+    ("Security Guard", "Gate Entry List",           "GET",  f"{BASE}/api/security-guard/gate-entry/",                             "Bearer", "Security Guard", "?search ?visit_type ?status ?date",  "Paginated gate entry list"),
+    ("Security Guard", "Gate Entry Create",         "POST", f"{BASE}/api/security-guard/gate-entry/",                             "Bearer", "Security Guard", '{"flat","visitor_name","mobile","visit_type","purpose"}', "Log new visitor at gate"),
+    ("Security Guard", "Gate Entry Summary",        "GET",  f"{BASE}/api/security-guard/gate-entry/summary/",                     "Bearer", "Security Guard", "",                                   "KPIs: today_entries, today_exits, currently_inside, pending_approval"),
+    ("Security Guard", "Entry/Exit Log",            "GET",  f"{BASE}/api/security-guard/gate-entry/log/",                         "Bearer", "Security Guard", "?search ?visit_type ?status ?date",  "Today's gate movement: NAME, TYPE, IN time, OUT time, STATUS"),
+    ("Security Guard", "Entry/Exit Log Export",     "GET",  f"{BASE}/api/security-guard/gate-entry/log/export/",                  "Bearer", "Security Guard", "?date=2026-05-25",                   "CSV export of entry/exit log"),
+    ("Security Guard", "Gate Entry Detail",         "GET",  f"{BASE}/api/security-guard/gate-entry/<pk>/",                        "Bearer", "Security Guard", "",                                   "Single gate entry detail"),
+
+    # ── SECURITY GUARD — Visitor Log ──────────────────────────────────────────
+    ("Security Guard", "Visitor Log List",          "GET",  f"{BASE}/api/security-guard/visitor-log/",                            "Bearer", "Security Guard", "?status ?visit_type ?date ?search",  "All visitors with status filters"),
+    ("Security Guard", "Visitor Approve",           "POST", f"{BASE}/api/security-guard/visitor-log/<pk>/approve/",               "Bearer", "Security Guard", "",                                   "Approve pending visitor"),
+    ("Security Guard", "Visitor Reject",            "POST", f"{BASE}/api/security-guard/visitor-log/<pk>/reject/",                "Bearer", "Security Guard", '{"reason":"..."}',                   "Reject visitor with optional reason"),
+    ("Security Guard", "Visitor Check-In",          "POST", f"{BASE}/api/security-guard/visitor-log/<pk>/check-in/",              "Bearer", "Security Guard", "",                                   "Mark visitor INSIDE — records checked_in_at"),
+    ("Security Guard", "Visitor Check-Out",         "POST", f"{BASE}/api/security-guard/visitor-log/<pk>/check-out/",             "Bearer", "Security Guard", "",                                   "Mark visitor EXITED — records checked_out_at"),
+
+    # ── SECURITY GUARD — Vehicle Tracking ─────────────────────────────────────
+    ("Security Guard", "Vehicle List",              "GET",  f"{BASE}/api/security-guard/vehicle-tracking/",                       "Bearer", "Security Guard", "?vehicle_type ?status ?date ?search","Vehicle log list"),
+    ("Security Guard", "Log Vehicle",               "POST", f"{BASE}/api/security-guard/vehicle-tracking/",                       "Bearer", "Security Guard", '{"vehicle_number","vehicle_type","direction","flat"}', "Log vehicle IN or OUT"),
+    ("Security Guard", "Vehicle Summary",           "GET",  f"{BASE}/api/security-guard/vehicle-tracking/summary/",               "Bearer", "Security Guard", "",                                   "KPIs: vehicles_in_today, vehicles_out_today, currently_inside, by_type"),
+    ("Security Guard", "Vehicle Detail",            "GET",  f"{BASE}/api/security-guard/vehicle-tracking/<pk>/",                  "Bearer", "Security Guard", "",                                   "Single vehicle log detail"),
+
+    # ── SECURITY GUARD — Emergency Alerts ─────────────────────────────────────
+    ("Security Guard", "Alerts List",               "GET",  f"{BASE}/api/security-guard/emergency-alerts/",                       "Bearer", "Security Guard", "?status=active|acknowledged|resolved","All emergency alerts with status filter"),
+    ("Security Guard", "Create Alert",              "POST", f"{BASE}/api/security-guard/emergency-alerts/",                       "Bearer", "Security Guard", '{"alert_type","description","location"}', "Raise new emergency alert"),
+    ("Security Guard", "Alert Stats",               "GET",  f"{BASE}/api/security-guard/emergency-alerts/stats/",                 "Bearer", "Security Guard", "",                                   "KPI counts: active, acknowledged, total"),
+    ("Security Guard", "Alert Detail",              "GET",  f"{BASE}/api/security-guard/emergency-alerts/<pk>/",                  "Bearer", "Security Guard", "",                                   "Single alert detail"),
+    ("Security Guard", "Acknowledge Alert",         "POST", f"{BASE}/api/security-guard/emergency-alerts/<pk>/acknowledge/",      "Bearer", "Security Guard", "",                                   "Move alert active → acknowledged"),
+    ("Security Guard", "Resolve Alert",             "POST", f"{BASE}/api/security-guard/emergency-alerts/<pk>/resolve/",          "Bearer", "Security Guard", '{"notes":"..."}',                    "Move alert acknowledged → resolved"),
+
+    # ── SECURITY GUARD — Shift Management ─────────────────────────────────────
+    ("Security Guard", "Shift List",                "GET",  f"{BASE}/api/security-guard/shift-management/",                       "Bearer", "Security Guard", "?date ?guard",                       "All shifts with date/guard filters"),
+    ("Security Guard", "Today Shift",               "GET",  f"{BASE}/api/security-guard/shift-management/today/",                 "Bearer", "Security Guard", "",                                   "Guard's own shift for today (null if none scheduled)"),
+
+    # ── SECURITY GUARD — Visitor Entry ────────────────────────────────────────
+    ("Security Guard", "Register Visitor",          "POST", f"{BASE}/api/security-guard/visitor-entry/",                          "Bearer", "Security Guard", '{"flat","visitor_name","mobile","visit_type","purpose"}', "Register new visitor at gate"),
+    ("Security Guard", "Search Visitor",            "GET",  f"{BASE}/api/security-guard/visitor-entry/search/",                   "Bearer", "Security Guard", "?mobile=9800000001 or ?name=Kavya",  "Search pre-registered visitors / guest passes"),
+
+    # ── SECURITY GUARD — QR / Passcode ────────────────────────────────────────
+    ("Security Guard", "Verify QR/Passcode",        "POST", f"{BASE}/api/security-guard/qr-passcode/verify/",                     "Bearer", "Security Guard", '{"pass_code":"MG-PASS-9XK2"}',       "Verify guest pass — returns visitor details if valid"),
+    ("Security Guard", "Check-In via QR",           "POST", f"{BASE}/api/security-guard/qr-passcode/checkin/",                    "Bearer", "Security Guard", '{"pass_code":"MG-PASS-9XK2"}',       "Check in visitor via QR scan or passcode"),
+
+    # ── SECURITY GUARD — Delivery Verify ──────────────────────────────────────
+    ("Security Guard", "Delivery List",             "GET",  f"{BASE}/api/security-guard/delivery-verify/",                        "Bearer", "Security Guard", "?status ?flat ?date ?search",        "All deliveries with filters"),
+    ("Security Guard", "Pending Deliveries",        "GET",  f"{BASE}/api/security-guard/delivery-verify/pending/",                "Bearer", "Security Guard", "",                                   "Deliveries awaiting guard action"),
+    ("Security Guard", "Deliveries At Gate",        "GET",  f"{BASE}/api/security-guard/delivery-verify/at-gate/",                "Bearer", "Security Guard", "",                                   "Deliveries currently at gate"),
+    ("Security Guard", "Delivery Summary",          "GET",  f"{BASE}/api/security-guard/delivery-verify/summary/",                "Bearer", "Security Guard", "",                                   "KPIs: today_total, pending, collected, rejected, returned"),
+    ("Security Guard", "Create Delivery",           "POST", f"{BASE}/api/security-guard/delivery-verify/",                        "Bearer", "Security Guard", '{"flat","delivery_type","sender_name","delivery_person","mobile","description"}', "Log delivery arrival at gate"),
+    ("Security Guard", "Delivery Detail",           "GET",  f"{BASE}/api/security-guard/delivery-verify/<pk>/",                   "Bearer", "Security Guard", "",                                   "Single delivery with OTP status"),
+    ("Security Guard", "Approve Delivery",          "POST", f"{BASE}/api/security-guard/delivery-verify/<pk>/approve/",           "Bearer", "Security Guard", "",                                   "Approve — triggers OTP send to resident"),
+    ("Security Guard", "Generate OTP",              "POST", f"{BASE}/api/security-guard/delivery-verify/<pk>/generate-otp/",      "Bearer", "Security Guard", "",                                   "Resend OTP to resident (dev OTP always 123456)"),
+    ("Security Guard", "Verify OTP",                "POST", f"{BASE}/api/security-guard/delivery-verify/<pk>/verify-otp/",        "Bearer", "Security Guard", '{"otp":"123456"}',                   "Resident gives OTP to guard — marks collected on success"),
+    ("Security Guard", "Reject Delivery",           "POST", f"{BASE}/api/security-guard/delivery-verify/<pk>/reject/",            "Bearer", "Security Guard", '{"reason":"..."}',                   "Reject delivery"),
+    ("Security Guard", "Mark At Gate",              "POST", f"{BASE}/api/security-guard/delivery-verify/<pk>/at-gate/",           "Bearer", "Security Guard", "",                                   "Mark delivery as at_gate"),
+    ("Security Guard", "Mark Collected",            "POST", f"{BASE}/api/security-guard/delivery-verify/<pk>/collected/",         "Bearer", "Security Guard", "",                                   "Mark delivery as collected"),
+    ("Security Guard", "Return Delivery",           "POST", f"{BASE}/api/security-guard/delivery-verify/<pk>/return/",            "Bearer", "Security Guard", "",                                   "Mark delivery returned to sender"),
+
+    # ── SECURITY GUARD — Approved Visitors ────────────────────────────────────
+    ("Security Guard", "Approved Visitors List",    "GET",  f"{BASE}/api/security-guard/approved-visitors/",                      "Bearer", "Security Guard", "?visit_type ?search",                "Pre-approved passes + resident-approved visitors"),
+    ("Security Guard", "Approved Visitor Check-In", "POST", f"{BASE}/api/security-guard/approved-visitors/checkin/",              "Bearer", "Security Guard", '{"visitor_id":3,"source":"visitor"}', "Check in an approved visitor or guest pass"),
+    ("Security Guard", "Approved Visitors Export",  "GET",  f"{BASE}/api/security-guard/approved-visitors/export/",               "Bearer", "Security Guard", "",                                   "CSV export of approved visitors"),
+
+    # ── SECURITY GUARD — Contact Resident ─────────────────────────────────────
+    ("Security Guard", "Contact Resident List",     "GET",  f"{BASE}/api/security-guard/contact-resident/",                       "Bearer", "Security Guard", "?search=flat/building/name/mobile",  "All flats in society with resident mobile numbers"),
+    ("Security Guard", "Contact Flat Detail",       "GET",  f"{BASE}/api/security-guard/contact-resident/{FLAT_ID}/",             "Bearer", "Security Guard", "",                                   "Contact card for one flat — all residents + mobiles"),
 ]
 
 
 ROLE_COLORS = {
-    "Auth":           ("1A1A2E", "FFFFFF"),
-    "Platform Admin": ("1B4332", "FFFFFF"),
-    "Society Admin":  ("1C3A5E", "FFFFFF"),
-    "Resident":       ("6B2D8B", "FFFFFF"),
+    "Auth":            ("1A1A2E", "FFFFFF"),
+    "Platform Admin":  ("1B4332", "FFFFFF"),
+    "Society Admin":   ("1C3A5E", "FFFFFF"),
+    "Resident":        ("6B2D8B", "FFFFFF"),
+    "Security Guard":  ("1A5276", "FFFFFF"),
 }
 
 METHOD_COLORS = {
@@ -236,11 +305,12 @@ AUTH_COLORS = {
 }
 
 ROLE_REQ_COLORS = {
-    "None":         ("AAAAAA", "FFFFFF"),
-    "Any":          ("2980B9", "FFFFFF"),
-    "Super Admin":  ("1B4332", "FFFFFF"),
-    "Society Admin":("1C3A5E", "FFFFFF"),
-    "Resident":     ("6B2D8B", "FFFFFF"),
+    "None":           ("AAAAAA", "FFFFFF"),
+    "Any":            ("2980B9", "FFFFFF"),
+    "Super Admin":    ("1B4332", "FFFFFF"),
+    "Society Admin":  ("1C3A5E", "FFFFFF"),
+    "Resident":       ("6B2D8B", "FFFFFF"),
+    "Security Guard": ("1A5276", "FFFFFF"),
 }
 
 
@@ -263,7 +333,7 @@ class Command(BaseCommand):
         ws_auth = wb.create_sheet("Auth & Security")
         ws_all  = wb.create_sheet("All APIs")
 
-        for role in ["Auth", "Platform Admin", "Society Admin", "Resident"]:
+        for role in ["Auth", "Platform Admin", "Society Admin", "Resident", "Security Guard"]:
             ws = wb.create_sheet(role)
             role_apis = [r for r in APIS if r[0] == role]
             self._build_role_sheet(ws, role, role_apis, Font, PatternFill, Alignment, Border, Side, get_column_letter)
@@ -278,7 +348,7 @@ class Command(BaseCommand):
         out = "MiniGate_API_Report.xlsx"
         wb.save(out)
         self.stdout.write(self.style.SUCCESS(f"Excel saved: {out}"))
-        self.stdout.write(f"  Total APIs: {len(APIS)} | Sheets: Summary, Auth & Security, All APIs, Auth, Platform Admin, Society Admin, Resident, Seed Data")
+        self.stdout.write(f"  Total APIs: {len(APIS)} | Sheets: Summary, Auth & Security, All APIs, Auth, Platform Admin, Society Admin, Resident, Security Guard, Seed Data")
 
     # ── helpers ───────────────────────────────────────────────────────────────
 
@@ -336,9 +406,10 @@ class Command(BaseCommand):
         self._hdr(ws, ["Role", "# APIs", "Auth Required"], 4, "1C3A5E", "FFFFFF",
                   Font, PatternFill, Alignment, Border, Side)
 
-        roles = ["Auth", "Platform Admin", "Society Admin", "Resident"]
+        roles = ["Auth", "Platform Admin", "Society Admin", "Resident", "Security Guard"]
         auth_label = ["Public (13) + Bearer (1)", "Bearer — Super Admin only",
-                      "Bearer — Society Admin only", "Bearer — Resident only"]
+                      "Bearer — Society Admin only", "Bearer — Resident only",
+                      "Bearer — Security Guard (also: Society Admin, Super Admin)"]
         for i, (role, alabel) in enumerate(zip(roles, auth_label)):
             count = len([r for r in APIS if r[0] == role])
             bg, fg = ROLE_COLORS[role]

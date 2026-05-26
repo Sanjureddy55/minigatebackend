@@ -1,3 +1,6 @@
 from django.urls import path
+from .views import WorkHistoryView
 
-urlpatterns = []
+urlpatterns = [
+    path("", WorkHistoryView.as_view()),
+]

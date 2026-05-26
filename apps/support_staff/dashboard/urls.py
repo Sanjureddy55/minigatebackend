@@ -1,3 +1,6 @@
 from django.urls import path
+from .views import SupportDashboardView
 
-urlpatterns = []
+urlpatterns = [
+    path("", SupportDashboardView.as_view()),
+]

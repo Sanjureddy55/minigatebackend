@@ -1,3 +1,7 @@
-from django.urls import path
+from rest_framework.routers import SimpleRouter
+from .views import MaintenanceTaskViewSet
 
-urlpatterns = []
+router = SimpleRouter(trailing_slash=True)
+router.register("", MaintenanceTaskViewSet, basename="maintenance-tasks")
+
+urlpatterns = router.urls

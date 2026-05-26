@@ -1,3 +1,6 @@
-from django.urls import path
+from rest_framework.routers import SimpleRouter
+from .views import DeliveryViewSet
 
-urlpatterns = []
+router = SimpleRouter(trailing_slash=True)
+router.register("", DeliveryViewSet, basename="delivery-partner-deliveries")
+urlpatterns = router.urls

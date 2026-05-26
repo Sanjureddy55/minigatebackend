@@ -1,3 +1,6 @@
 from django.urls import path
+from .views import MaintenanceScheduleView
 
-urlpatterns = []
+urlpatterns = [
+    path("", MaintenanceScheduleView.as_view()),
+]

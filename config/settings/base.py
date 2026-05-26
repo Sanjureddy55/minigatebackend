@@ -103,6 +103,7 @@ LOCAL_ROLE_APPS = [
     "apps.society_admin.approvals",
     "apps.society_admin.security",
     "apps.society_admin.audit_logs",
+    "apps.society_admin.staff_accounts",
     # ── Resident ──────────────────────────────────────────────────────────
     "apps.resident.dashboard",
     "apps.resident.complaints",
@@ -120,6 +121,11 @@ LOCAL_ROLE_APPS = [
     "apps.security_guard.vehicle_tracking",
     "apps.security_guard.emergency_alerts",
     "apps.security_guard.shift_management",
+    "apps.security_guard.visitor_entry",
+    "apps.security_guard.qr_passcode",
+    "apps.security_guard.delivery_verify",
+    "apps.security_guard.approved_visitors",
+    "apps.security_guard.contact_resident",
     # ── Accountant ────────────────────────────────────────────────────────
     # ── Accountant: BILLING ────────────────────────────────────────────────────
     "apps.accountant.dashboard",

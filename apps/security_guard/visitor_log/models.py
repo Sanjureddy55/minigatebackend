@@ -1,3 +1,4 @@
 from django.db import models
 
-# TODO: Define security_guard_visitor_log models
+# No models — this sub-app operates on the shared Visitor model
+# from apps.society_admin.visitors.models import Visitor

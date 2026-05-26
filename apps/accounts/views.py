@@ -385,10 +385,13 @@ class MobileOTPLoginView(APIView):
         "resident":       "resident_dashboard",
         "security-guard": "security_guard_dashboard",
         "accountant":     "accountant_dashboard",
-        "maintenance":    "maintenance_staff_dashboard",
-        "support-staff":  "support_staff_dashboard",
-        "delivery":       "delivery_partner_dashboard",
-        "guest":          "guest_dashboard",
+        "maintenance-staff": "maintenance_staff_dashboard",
+        "maintenance":       "maintenance_staff_dashboard",
+        "support-staff":     "support_staff_dashboard",
+        "delivery-partner":  "delivery_partner_dashboard",
+        "delivery":          "delivery_partner_dashboard",  # legacy
+        "guest-user":        "guest_user_dashboard",
+        "guest":             "guest_user_dashboard",        # legacy
     }
 
     def post(self, request):

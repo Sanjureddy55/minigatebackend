@@ -1,3 +1,3 @@
 from django.db import models
 
-# TODO: Define guest_user_access_pass models
+# AccessPass is defined in apps.common.models — no local model needed.

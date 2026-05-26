@@ -1514,56 +1514,355 @@ else:
 # =============================================================================
 # PHASE 8 -- SECURITY GUARD APIs
 # =============================================================================
-section("PHASE 8 -- Security Guard APIs (stub — 200 or 404 accepted)")
+section("PHASE 8 -- Security Guard APIs")
 
+GUARD_MOBILE = "9000000004"   # update if guard was seeded with a different mobile
 
-def req_stub(method, path, token=None, label=None, phase=""):
-    """Like req() but accepts 200 OR 404 — for stub/empty-urlpatterns apps."""
-    url = BASE + path
-    headers = {"Content-Type": "application/json"}
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    try:
-        r = getattr(requests, method.lower())(url, headers=headers, timeout=10)
-    except Exception as e:
-        results.append(Result(phase=phase, api=path, method=method, status=0,
-                               expected="200|404", actual=None, ok=False, note=str(e)))
-        print(f"{FAIL} [{method}] {label or path}  -- {e}")
-        return
-    ok  = r.status_code in (200, 404)
-    tag = PASS if ok else FAIL
-    print(f"{tag} [{method}] {label or path}  status={r.status_code}  (accepted: 200|404)")
-    results.append(Result(phase=phase, api=path, method=method, status=r.status_code,
-                           expected="200|404", actual=r.status_code, ok=ok))
-
-
-_sg = soc_token or sa_token
-if not _sg:
-    print("  !! No guard token - skipping phase 8")
+# ── 8.0  Guard login (fall back to society-admin token) ──────────────────────
+sub("8.0  Guard login")
+guard_token = None
+_, g_body = req("POST", "/api/accounts/login/mobile/",
+                json_body={"mobile": GUARD_MOBILE, "otp_code": OTP},
+                expected=200, label="Guard OTP login", phase="SecurityGuard",
+                show_fail=False)
+if g_body:
+    guard_token, _ = tokens_from(g_body)
+if not guard_token:
+    guard_token = soc_token or sa_token
+    print("        [INFO] Guard login not found — using society-admin token as fallback")
 else:
+    check(guard_token is not None, "Guard login returned access token")
+
+_sg = guard_token
+if not _sg:
+    print("  !! No usable guard token — skipping Phase 8")
+else:
+    # ── 8.1  Guard Dashboard ─────────────────────────────────────────────────
     sub("8.1  Guard Dashboard")
-    req_stub("GET", "/api/security-guard/dashboard/",
-             token=_sg, label="Guard dashboard", phase="SecurityGuard")
+    _, dash = req("GET", "/api/security-guard/dashboard/",
+                  token=_sg, expected=200, label="Guard dashboard", phase="SecurityGuard")
+    if dash and isinstance(dash, dict):
+        d = dash.get("data") or {}
+        for key in ("in_today", "out_today", "at_gate", "active_alerts"):
+            check(key in d, f"Dashboard has {key}")
 
+    # ── 8.2  Gate Entry ──────────────────────────────────────────────────────
     sub("8.2  Gate Entry")
-    req_stub("GET", "/api/security-guard/gate-entry/",
-             token=_sg, label="Gate entry list", phase="SecurityGuard")
+    _, gel = req("GET", "/api/security-guard/gate-entry/",
+                 token=_sg, expected=200, label="Gate entry list", phase="SecurityGuard")
+    check(isinstance(gel, dict), "Gate entry list is paginated dict", str(type(gel)))
 
-    sub("8.3  Visitor Log")
-    req_stub("GET", "/api/security-guard/visitor-log/",
-             token=_sg, label="Visitor log", phase="SecurityGuard")
+    _, ge_sum = req("GET", "/api/security-guard/gate-entry/summary/",
+                    token=_sg, expected=200, label="Gate entry summary", phase="SecurityGuard")
+    if ge_sum:
+        d = ge_sum.get("data") or ge_sum
+        # Various key names depending on implementation
+        check(
+            "today_entries" in d or "currently_inside" in d
+            or "in_today" in d or "total" in d or "success" in ge_sum,
+            "Entry summary has KPI fields", str(list(d.keys())[:6])
+        )
 
-    sub("8.4  Vehicle Tracking")
-    req_stub("GET", "/api/security-guard/vehicle-tracking/",
-             token=_sg, label="Vehicle tracking", phase="SecurityGuard")
+    gate_entry_id = None
+    _, ge_new = req("POST", "/api/security-guard/gate-entry/",
+                    token=_sg, expected=[201, 400],
+                    json_body={
+                        "visitor_name": f"Test Visitor {_RUN}",
+                        "mobile":       f"98{_RUN}0001",
+                        "entry_type":   "visitor",
+                        "direction":    "in",
+                        "flat_number":  FLAT_NUMBER,
+                        "purpose":      "personal",
+                    },
+                    label="Gate entry create", phase="SecurityGuard")
+    if ge_new and isinstance(ge_new, dict):
+        gate_entry_id = ge_new.get("id") or (ge_new.get("data") or {}).get("id")
 
-    sub("8.5  Emergency Alerts")
-    req_stub("GET", "/api/security-guard/emergency-alerts/",
-             token=_sg, label="Emergency alerts", phase="SecurityGuard")
+    if gate_entry_id:
+        req("GET", f"/api/security-guard/gate-entry/{gate_entry_id}/",
+            token=_sg, expected=200, label="Gate entry detail", phase="SecurityGuard")
 
-    sub("8.6  Shift Management")
-    req_stub("GET", "/api/security-guard/shift-management/",
-             token=_sg, label="Shift management", phase="SecurityGuard")
+    # ── 8.3  Entry/Exit Log ──────────────────────────────────────────────────
+    sub("8.3  Entry/Exit Log")
+    _, log = req("GET", "/api/security-guard/gate-entry/log/",
+                 token=_sg, expected=200, label="Entry/Exit log today", phase="SecurityGuard")
+    if log and isinstance(log, dict):
+        check("log_date" in log, "Log has log_date")
+        check("stats" in log, "Log has stats block")
+        stats = log.get("stats") or {}
+        for k in ("total", "inside", "exited"):
+            check(k in stats, f"Log stats has {k}")
+
+    req("GET", "/api/security-guard/gate-entry/log/",
+        token=_sg, params={"date": "2026-05-25"},
+        expected=200, label="Entry/Exit log ?date=2026-05-25", phase="SecurityGuard")
+
+    req_binary("GET", "/api/security-guard/gate-entry/log/export/",
+               token=_sg, expected=200,
+               label="Entry/Exit log CSV export", phase="SecurityGuard")
+
+    # ── 8.4  Visitor Log ─────────────────────────────────────────────────────
+    sub("8.4  Visitor Log")
+    _, vlog = req("GET", "/api/security-guard/visitor-log/",
+                  token=_sg, expected=200, label="Visitor log list", phase="SecurityGuard")
+    visitor_id = None
+    if vlog:
+        first = first_result(vlog)
+        if first:
+            visitor_id = first.get("id")
+            print(f"        first visitor: id={visitor_id} status={first.get('status')}")
+
+    if visitor_id:
+        first_v = first_result(vlog) or {}
+        st = first_v.get("status", "")
+        if st == "pending":
+            req("POST", f"/api/security-guard/visitor-log/{visitor_id}/approve/",
+                token=_sg, expected=[200, 400],
+                label="Visitor approve", phase="SecurityGuard")
+        if st in ("pending", "approved"):
+            req("POST", f"/api/security-guard/visitor-log/{visitor_id}/check-in/",
+                token=_sg, expected=[200, 400],
+                label="Visitor check-in", phase="SecurityGuard")
+
+    req("GET", "/api/security-guard/visitor-log/",
+        token=_sg, params={"status": "pending"},
+        expected=200, label="Visitor log filter status=pending", phase="SecurityGuard")
+    req("GET", "/api/security-guard/visitor-log/",
+        token=_sg, params={"visit_type": "visitor"},
+        expected=200, label="Visitor log filter visit_type=visitor", phase="SecurityGuard")
+
+    # ── 8.5  Vehicle Tracking ────────────────────────────────────────────────
+    sub("8.5  Vehicle Tracking")
+    req("GET", "/api/security-guard/vehicle-tracking/",
+        token=_sg, expected=200, label="Vehicle tracking list", phase="SecurityGuard")
+
+    _, vt_sum = req("GET", "/api/security-guard/vehicle-tracking/summary/",
+                    token=_sg, expected=200, label="Vehicle summary", phase="SecurityGuard")
+    if vt_sum:
+        d = vt_sum.get("data") or vt_sum
+        check(
+            "vehicles_in_today" in d or "currently_inside" in d
+            or "total" in d or "in_today" in d or "success" in vt_sum,
+            "Vehicle summary has KPI fields", str(list(d.keys())[:6])
+        )
+
+    vehicle_id = None
+    _, vt_new = req("POST", "/api/security-guard/vehicle-tracking/",
+                    token=_sg, expected=[201, 400],
+                    json_body={
+                        "vehicle_number": f"MH12{_RUN}",
+                        "vehicle_type":   "car",
+                        "direction":      "in",
+                        "flat":           FLAT_UUID,
+                    },
+                    label="Log vehicle IN", phase="SecurityGuard")
+    if vt_new and isinstance(vt_new, dict):
+        vehicle_id = vt_new.get("id") or (vt_new.get("data") or {}).get("id")
+
+    if vehicle_id:
+        req("GET", f"/api/security-guard/vehicle-tracking/{vehicle_id}/",
+            token=_sg, expected=200, label="Vehicle detail", phase="SecurityGuard")
+
+    # ── 8.6  Emergency Alerts ────────────────────────────────────────────────
+    sub("8.6  Emergency Alerts")
+    _, alerts_list = req("GET", "/api/security-guard/emergency-alerts/",
+                         token=_sg, expected=200, label="Alerts list", phase="SecurityGuard")
+
+    _, al_stats = req("GET", "/api/security-guard/emergency-alerts/stats/",
+                      token=_sg, expected=200, label="Alert stats", phase="SecurityGuard")
+    if al_stats:
+        d = al_stats.get("data") or {}
+        for k in ("active", "acknowledged", "total"):
+            check(k in d, f"Alert stats has {k}")
+
+    alert_id = None
+    _, al_new = req("POST", "/api/security-guard/emergency-alerts/",
+                    token=_sg, expected=[201, 400],
+                    json_body={
+                        "alert_type":  "intruder",
+                        "description": f"Test alert {_RUN}",
+                        "location":    "Main Gate",
+                    },
+                    label="Create emergency alert", phase="SecurityGuard")
+    if al_new and isinstance(al_new, dict):
+        alert_id = al_new.get("id") or (al_new.get("data") or {}).get("id")
+
+    if alert_id:
+        req("GET", f"/api/security-guard/emergency-alerts/{alert_id}/",
+            token=_sg, expected=200, label="Alert detail", phase="SecurityGuard")
+        _, ack = req("POST", f"/api/security-guard/emergency-alerts/{alert_id}/acknowledge/",
+                     token=_sg, expected=[200, 400],
+                     label="Acknowledge alert", phase="SecurityGuard")
+        if ack and isinstance(ack, dict):
+            check(ack.get("success") or ack.get("status") == "acknowledged",
+                  "Acknowledge returns success or acknowledged status")
+        req("POST", f"/api/security-guard/emergency-alerts/{alert_id}/resolve/",
+            token=_sg, json_body={"notes": "Test resolved"},
+            expected=[200, 400],
+            label="Resolve alert", phase="SecurityGuard")
+
+    req("GET", "/api/security-guard/emergency-alerts/",
+        token=_sg, params={"status": "active"},
+        expected=200, label="Alerts filter status=active", phase="SecurityGuard")
+
+    # ── 8.7  Shift Management ────────────────────────────────────────────────
+    sub("8.7  Shift Management")
+    req("GET", "/api/security-guard/shift-management/",
+        token=_sg, expected=200, label="Shift list", phase="SecurityGuard")
+    _, today_shift = req("GET", "/api/security-guard/shift-management/today/",
+                         token=_sg, expected=200, label="Today's shift", phase="SecurityGuard")
+    if today_shift and isinstance(today_shift, dict):
+        check("success" in today_shift, "Today shift response has success key")
+
+    # ── 8.8  Visitor Entry (Register at Gate) ────────────────────────────────
+    sub("8.8  Visitor Entry")
+    new_vis_id = None
+    _, ve_new = req("POST", "/api/security-guard/visitor-entry/",
+                    token=_sg, expected=[201, 400],
+                    json_body={
+                        "flat":       FLAT_UUID,
+                        "full_name":  f"Gate Visitor {_RUN}",
+                        "mobile":     f"97{_RUN}0002",
+                        "visit_type": "guest",
+                        "purpose":    "personal",
+                    },
+                    label="Register visitor at gate", phase="SecurityGuard")
+    if ve_new and isinstance(ve_new, dict):
+        new_vis_id = ve_new.get("id") or (ve_new.get("data") or {}).get("id")
+        print(f"        registered visitor id={new_vis_id}")
+
+    req("GET", "/api/security-guard/visitor-entry/search/",
+        token=_sg, params={"mobile": RES_MOBILE},
+        expected=200, label="Search visitor by mobile", phase="SecurityGuard")
+    req("GET", "/api/security-guard/visitor-entry/search/",
+        token=_sg, params={"name": "Aarav"},
+        expected=200, label="Search visitor by name", phase="SecurityGuard")
+
+    # ── 8.9  QR / Passcode Verification ─────────────────────────────────────
+    sub("8.9  QR / Passcode Verification")
+    _, qr_verify = req("POST", "/api/security-guard/qr-passcode/verify/",
+                       token=_sg, json_body={"code": "MG-PASS-XXXX"},
+                       expected=[200, 400, 404],
+                       label="Verify QR passcode (non-existent)", phase="SecurityGuard")
+    if qr_verify and isinstance(qr_verify, dict):
+        check("valid" in qr_verify or "success" in qr_verify,
+              "Verify response has valid or success key")
+
+    req("POST", "/api/security-guard/qr-passcode/checkin/",
+        token=_sg, json_body={"code": "MG-PASS-XXXX"},
+        expected=[200, 400, 404],
+        label="Check-in via QR (non-existent pass)", phase="SecurityGuard")
+
+    # ── 8.10  Delivery Verification ──────────────────────────────────────────
+    sub("8.10  Delivery Verify")
+    req("GET", "/api/security-guard/delivery-verify/",
+        token=_sg, expected=200, label="Delivery list", phase="SecurityGuard")
+    req("GET", "/api/security-guard/delivery-verify/pending/",
+        token=_sg, expected=200, label="Pending deliveries", phase="SecurityGuard")
+    req("GET", "/api/security-guard/delivery-verify/at-gate/",
+        token=_sg, expected=200, label="Deliveries at gate", phase="SecurityGuard")
+
+    _, dv_sum = req("GET", "/api/security-guard/delivery-verify/summary/",
+                    token=_sg, expected=200, label="Delivery summary", phase="SecurityGuard")
+    if dv_sum:
+        d = dv_sum.get("data") or {}
+        check("total_today" in d or "pending" in d, "Delivery summary has KPI fields")
+
+    delivery_id = None
+    _, dv_new = req("POST", "/api/security-guard/delivery-verify/",
+                    token=_sg, expected=[201, 400],
+                    json_body={
+                        "flat":            FLAT_UUID,
+                        "delivery_type":   "courier",
+                        "vendor":          "dtdc",
+                        "agent_name":      f"DTDC Agent {_RUN}",
+                        "agent_mobile":    f"96{_RUN}0003",
+                        "flat_number_raw": FLAT_NUMBER,
+                        "recipient_name":  "Aarav Sharma",
+                    },
+                    label="Create delivery entry", phase="SecurityGuard")
+    if dv_new and isinstance(dv_new, dict):
+        delivery_id = dv_new.get("id") or (dv_new.get("data") or {}).get("id")
+        print(f"        created delivery id={delivery_id}")
+
+    if delivery_id:
+        req("GET", f"/api/security-guard/delivery-verify/{delivery_id}/",
+            token=_sg, expected=200, label="Delivery detail", phase="SecurityGuard")
+        req("POST", f"/api/security-guard/delivery-verify/{delivery_id}/approve/",
+            token=_sg, expected=[200, 400],
+            label="Approve delivery (sends OTP)", phase="SecurityGuard")
+        req("POST", f"/api/security-guard/delivery-verify/{delivery_id}/generate-otp/",
+            token=_sg, expected=[200, 400],
+            label="Generate/resend OTP", phase="SecurityGuard")
+        _, dv_otp = req("POST", f"/api/security-guard/delivery-verify/{delivery_id}/verify-otp/",
+                        token=_sg, json_body={"otp_code": OTP},
+                        expected=[200, 400],
+                        label="Verify OTP=123456", phase="SecurityGuard")
+        if dv_otp and isinstance(dv_otp, dict):
+            print(f"        OTP verify: success={dv_otp.get('success')} "
+                  f"msg={str(dv_otp.get('message', ''))[:50]}")
+
+    req("GET", "/api/security-guard/delivery-verify/",
+        token=_sg, params={"status": "pending"},
+        expected=200, label="Delivery filter status=pending", phase="SecurityGuard")
+
+    # ── 8.11  Approved Visitors ──────────────────────────────────────────────
+    sub("8.11  Approved Visitors")
+    _, av_list = req("GET", "/api/security-guard/approved-visitors/",
+                     token=_sg, expected=200, label="Approved visitors list", phase="SecurityGuard")
+    if av_list:
+        items = av_list.get("results") or []
+        print(f"        {len(items)} approved visitors found")
+        if items:
+            first = items[0]
+            check("visitor_name" in first, "Approved visitor has visitor_name")
+            check("source" in first, "Approved visitor has source (guest_pass|visitor)")
+            check("flat_display" in first, "Approved visitor has flat_display")
+
+    req("GET", "/api/security-guard/approved-visitors/",
+        token=_sg, params={"visit_type": "visitor"},
+        expected=200, label="Approved visitors filter visit_type=visitor", phase="SecurityGuard")
+
+    req_binary("GET", "/api/security-guard/approved-visitors/export/",
+               token=_sg, expected=200,
+               label="Approved visitors CSV export", phase="SecurityGuard")
+
+    # ── 8.12  Contact Resident ───────────────────────────────────────────────
+    sub("8.12  Contact Resident")
+    _, cr_list = req("GET", "/api/security-guard/contact-resident/",
+                     token=_sg, expected=200, label="Contact resident list", phase="SecurityGuard")
+    if cr_list:
+        items = cr_list.get("results") or []
+        print(f"        {len(items)} flat(s) with residents")
+        if items:
+            first = items[0]
+            check("flat_display" in first, "Contact item has flat_display")
+            check("residents" in first, "Contact item has residents list")
+
+    req("GET", "/api/security-guard/contact-resident/",
+        token=_sg, params={"search": "Aarav"},
+        expected=200, label="Contact resident search=Aarav", phase="SecurityGuard")
+
+    _, cr_flat = req("GET", f"/api/security-guard/contact-resident/{FLAT_UUID}/",
+                     token=_sg, expected=[200, 404],
+                     label=f"Contact flat detail (A-101 UUID)", phase="SecurityGuard")
+    if cr_flat and isinstance(cr_flat, dict):
+        d = cr_flat.get("data") or cr_flat
+        check("residents" in d or "flat_display" in d,
+              "Flat contact detail has residents or flat_display")
+
+    # ── 8.13  Cross-role: resident cannot reach guard endpoints ──────────────
+    sub("8.13  Resident cannot access guard APIs")
+    if res_token:
+        req("GET", "/api/security-guard/dashboard/",
+            token=res_token, expected=403,
+            label="Resident on guard dashboard -> 403", phase="SecurityGuard")
+        req("GET", "/api/security-guard/emergency-alerts/",
+            token=res_token, expected=403,
+            label="Resident on emergency-alerts -> 403", phase="SecurityGuard")
+        req("GET", "/api/security-guard/contact-resident/",
+            token=res_token, expected=403,
+            label="Resident on contact-resident -> 403", phase="SecurityGuard")
 
 
 # =============================================================================
@@ -1615,6 +1914,675 @@ for path in [
 
 
 # =============================================================================
+# PHASE 10 -- MAINTENANCE STAFF APIs
+# =============================================================================
+section("PHASE 10 -- Maintenance Staff APIs")
+
+MAINT_MOBILE = "9000000005"   # Raju Sharma, maintenance-staff, society 11
+
+sub("10.0  Maintenance Staff login")
+maint_token = None
+_, m_body = req("POST", "/api/accounts/login/mobile/",
+                json_body={"mobile": MAINT_MOBILE, "otp_code": OTP},
+                expected=200, label="Maintenance staff OTP login", phase="MaintenanceStaff",
+                show_fail=False)
+if m_body:
+    maint_token, _ = tokens_from(m_body)
+if not maint_token:
+    maint_token = soc_token or sa_token
+    print("        [INFO] Maintenance login failed — using society-admin token as fallback")
+else:
+    check(maint_token is not None, "Maintenance staff login returned access token")
+    if m_body:
+        d = m_body.get("data", {})
+        check(d.get("role", {}).get("slug") == "maintenance-staff",
+              "Login role.slug == maintenance-staff")
+        check(m_body.get("home_route") == "maintenance_staff_dashboard",
+              "Login home_route == maintenance_staff_dashboard",
+              str(m_body.get("home_route")))
+
+_ms = maint_token
+if not _ms:
+    print("  !! No maintenance staff token — skipping Phase 10")
+else:
+    sub("10.1  Dashboard")
+    _, md = req("GET", "/api/maintenance-staff/dashboard/",
+                token=_ms, expected=200, label="Maintenance dashboard", phase="MaintenanceStaff")
+    if md and isinstance(md, dict):
+        d = md.get("data") or {}
+        check("stats" in d, "Dashboard has stats")
+        check("my_task_queue" in d, "Dashboard has my_task_queue")
+        check("recently_completed" in d, "Dashboard has recently_completed")
+        s = d.get("stats") or {}
+        for k in ("open", "in_progress", "done_this_week"):
+            check(k in s, f"Dashboard stats has {k}")
+
+    sub("10.2  Auth guards")
+    req("GET", "/api/maintenance-staff/dashboard/",
+        expected=401, label="No token -> 401", phase="MaintenanceStaff")
+    if res_token:
+        req("GET", "/api/maintenance-staff/dashboard/",
+            token=res_token, expected=403,
+            label="Resident on maintenance dashboard -> 403", phase="MaintenanceStaff")
+
+    sub("10.3  Assigned Tasks -- list")
+    _, task_list = req("GET", "/api/maintenance-staff/assigned-tasks/",
+                       token=_ms, expected=200,
+                       label="List tasks", phase="MaintenanceStaff")
+    if task_list:
+        cnt = task_list.get("count", len(task_list.get("results", [])))
+        print(f"        tasks count={cnt}")
+
+    req("GET", "/api/maintenance-staff/assigned-tasks/",
+        token=_ms, params={"status": "open"},
+        expected=200, label="Filter tasks status=open", phase="MaintenanceStaff")
+    req("GET", "/api/maintenance-staff/assigned-tasks/",
+        token=_ms, params={"priority": "high"},
+        expected=200, label="Filter tasks priority=high", phase="MaintenanceStaff")
+    req("GET", "/api/maintenance-staff/assigned-tasks/",
+        token=_ms, params={"search": "pump"},
+        expected=200, label="Search tasks", phase="MaintenanceStaff")
+
+    sub("10.4  Create + CRUD a task (society-admin or maintenance-staff can create)")
+    # Use soc_token so the task gets assigned to our maintenance staff user
+    maint_profile_id = None
+    try:
+        from apps.roles_permissions.models import UserProfile
+        mp = UserProfile.objects.get(mobile=MAINT_MOBILE)
+        maint_profile_id = mp.pk
+    except Exception:
+        pass
+
+    _ct = soc_token or sa_token
+    new_task_id = None
+    if _ct:
+        _, new_task = req("POST", "/api/maintenance-staff/assigned-tasks/",
+                          token=_ct,
+                          json_body={
+                              "title": f"E2E Pump Repair {_RUN}",
+                              "category": "plumbing",
+                              "priority": "high",
+                              "location": "Block A Terrace",
+                              "description": "Water pump making noise",
+                              **({"assignee": maint_profile_id} if maint_profile_id else {}),
+                          },
+                          expected=201, label="Create task", phase="MaintenanceStaff")
+        if new_task:
+            d = new_task.get("data") or new_task
+            new_task_id = d.get("id") if isinstance(d, dict) else None
+            if new_task_id:
+                check(d.get("status") == "open", "New task status==open",
+                      str(d.get("status")))
+                check("task_id" in d, "Task has task_id field (TSK-XXXX)")
+
+    if new_task_id:
+        req("GET", f"/api/maintenance-staff/assigned-tasks/{new_task_id}/",
+            token=_ms, expected=200, label="Retrieve task", phase="MaintenanceStaff")
+
+        _, start_r = req("PATCH", f"/api/maintenance-staff/assigned-tasks/{new_task_id}/start/",
+                         token=_ms, expected=200,
+                         label="Start task (OPEN -> IN_PROGRESS)", phase="MaintenanceStaff")
+        if start_r:
+            d = (start_r.get("data") or start_r)
+            check(d.get("status") == "in_progress", "After start: status==in_progress",
+                  str(d.get("status")))
+
+        _, complete_r = req("PATCH", f"/api/maintenance-staff/assigned-tasks/{new_task_id}/complete/",
+                            token=_ms,
+                            json_body={"resolution_notes": "Pump replaced successfully", "hours_logged": 2},
+                            expected=200,
+                            label="Complete task (IN_PROGRESS -> DONE)", phase="MaintenanceStaff")
+        if complete_r:
+            d = (complete_r.get("data") or complete_r)
+            check(d.get("status") == "done", "After complete: status==done",
+                  str(d.get("status")))
+            check(d.get("resolution_notes") == "Pump replaced successfully",
+                  "resolution_notes saved")
+
+        req("PATCH", f"/api/maintenance-staff/assigned-tasks/{new_task_id}/complete/",
+            token=_ms, expected=400,
+            label="Complete already-done task -> 400", phase="MaintenanceStaff")
+
+    req("GET", "/api/maintenance-staff/assigned-tasks/999999/",
+        token=_ms, expected=404, label="Task 999999 -> 404", phase="MaintenanceStaff")
+
+    sub("10.5  Work History")
+    req("GET", "/api/maintenance-staff/work-history/",
+        token=_ms, expected=200, label="Work history list", phase="MaintenanceStaff")
+
+    sub("10.6  Materials Request")
+    req("GET", "/api/maintenance-staff/materials-request/",
+        token=_ms, expected=200, label="Materials request list", phase="MaintenanceStaff")
+
+    sub("10.7  Schedule")
+    req("GET", "/api/maintenance-staff/schedule/",
+        token=_ms, expected=200, label="Schedule list", phase="MaintenanceStaff")
+
+
+# =============================================================================
+# PHASE 11 -- SUPPORT STAFF APIs
+# =============================================================================
+section("PHASE 11 -- Support Staff APIs")
+
+SUPPORT_MOBILE = "9000000006"  # Priya Nair, support-staff, society 11
+
+sub("11.0  Support Staff login")
+support_token = None
+_, sp_body = req("POST", "/api/accounts/login/mobile/",
+                 json_body={"mobile": SUPPORT_MOBILE, "otp_code": OTP},
+                 expected=200, label="Support staff OTP login", phase="SupportStaff",
+                 show_fail=False)
+if sp_body:
+    support_token, _ = tokens_from(sp_body)
+if not support_token:
+    support_token = soc_token or sa_token
+    print("        [INFO] Support login failed — using society-admin token as fallback")
+else:
+    check(support_token is not None, "Support staff login returned access token")
+    if sp_body:
+        d = sp_body.get("data", {})
+        check(d.get("role", {}).get("slug") == "support-staff",
+              "Login role.slug == support-staff")
+        check(sp_body.get("home_route") == "support_staff_dashboard",
+              "Login home_route == support_staff_dashboard",
+              str(sp_body.get("home_route")))
+
+_ss = support_token
+if not _ss:
+    print("  !! No support staff token — skipping Phase 11")
+else:
+    sub("11.1  Dashboard")
+    _, spd = req("GET", "/api/support-staff/dashboard/",
+                 token=_ss, expected=200, label="Support dashboard", phase="SupportStaff")
+    if spd and isinstance(spd, dict):
+        d = spd.get("data") or {}
+        check("stats" in d, "Dashboard has stats")
+        check("active_tickets" in d, "Dashboard has active_tickets")
+        check("recently_resolved" in d, "Dashboard has recently_resolved")
+        s = d.get("stats") or {}
+        for k in ("open", "in_progress", "resolved_this_week"):
+            check(k in s, f"Dashboard stats has {k}")
+
+    sub("11.2  Auth guards")
+    req("GET", "/api/support-staff/dashboard/",
+        expected=401, label="No token -> 401", phase="SupportStaff")
+    if res_token:
+        req("GET", "/api/support-staff/dashboard/",
+            token=res_token, expected=403,
+            label="Resident on support dashboard -> 403", phase="SupportStaff")
+
+    sub("11.3  Assigned Tickets -- list + filters")
+    _, ticket_list = req("GET", "/api/support-staff/assigned-tickets/",
+                         token=_ss, expected=200,
+                         label="List tickets", phase="SupportStaff")
+    if ticket_list:
+        cnt = ticket_list.get("count", len(ticket_list.get("results", [])))
+        print(f"        tickets count={cnt}")
+
+    req("GET", "/api/support-staff/assigned-tickets/",
+        token=_ss, params={"status": "open"},
+        expected=200, label="Filter tickets status=open", phase="SupportStaff")
+    req("GET", "/api/support-staff/assigned-tickets/",
+        token=_ss, params={"priority": "high"},
+        expected=200, label="Filter tickets priority=high", phase="SupportStaff")
+    req("GET", "/api/support-staff/assigned-tickets/",
+        token=_ss, params={"search": "payment"},
+        expected=200, label="Search tickets", phase="SupportStaff")
+
+    sub("11.4  Create + CRUD a ticket")
+    new_ticket_id = None
+    _ct2 = soc_token or sa_token
+    support_profile_id = None
+    try:
+        from apps.roles_permissions.models import UserProfile
+        spp = UserProfile.objects.get(mobile=SUPPORT_MOBILE)
+        support_profile_id = spp.pk
+    except Exception:
+        pass
+
+    if _ct2:
+        _, new_ticket = req("POST", "/api/support-staff/assigned-tickets/",
+                            token=_ss,
+                            json_body={
+                                "subject": f"E2E Payment Issue {_RUN}",
+                                "category": "app_issue",
+                                "priority": "medium",
+                                "description": "Resident cannot see payment receipt",
+                                **({"resident": RES_PROF_ID} if RES_PROF_ID else {}),
+                            },
+                            expected=201, label="Create ticket", phase="SupportStaff")
+        if new_ticket:
+            d = new_ticket.get("data") or new_ticket
+            new_ticket_id = d.get("id") if isinstance(d, dict) else None
+            if new_ticket_id:
+                check(d.get("status") == "open", "New ticket status==open",
+                      str(d.get("status")))
+                check("ticket_id" in d, "Ticket has ticket_id field")
+
+    if new_ticket_id:
+        req("GET", f"/api/support-staff/assigned-tickets/{new_ticket_id}/",
+            token=_ss, expected=200, label="Retrieve ticket", phase="SupportStaff")
+
+        _, pickup_r = req("PATCH", f"/api/support-staff/assigned-tickets/{new_ticket_id}/pickup/",
+                          token=_ss, expected=200,
+                          label="Pick up ticket (OPEN -> IN_PROGRESS)", phase="SupportStaff")
+        if pickup_r:
+            d = (pickup_r.get("data") or pickup_r)
+            check(d.get("status") == "in_progress", "After pickup: status==in_progress",
+                  str(d.get("status")))
+
+        _, resolve_r = req("PATCH", f"/api/support-staff/assigned-tickets/{new_ticket_id}/resolve/",
+                           token=_ss,
+                           json_body={"resolution_notes": "Sent receipt via email", "time_taken": "30 mins"},
+                           expected=200,
+                           label="Resolve ticket (IN_PROGRESS -> RESOLVED)", phase="SupportStaff")
+        if resolve_r:
+            d = (resolve_r.get("data") or resolve_r)
+            check(d.get("status") == "resolved", "After resolve: status==resolved",
+                  str(d.get("status")))
+            check(d.get("resolution_notes") == "Sent receipt via email",
+                  "resolution_notes saved")
+
+        req("PATCH", f"/api/support-staff/assigned-tickets/{new_ticket_id}/resolve/",
+            token=_ss, expected=400,
+            label="Resolve already-resolved ticket -> 400", phase="SupportStaff")
+
+    req("GET", "/api/support-staff/assigned-tickets/999999/",
+        token=_ss, expected=404, label="Ticket 999999 -> 404", phase="SupportStaff")
+
+    sub("11.5  Ticket Updates")
+    # Requires ?ticket=<id> — use the created ticket if available, else expect 400
+    if new_ticket_id:
+        req("GET", "/api/support-staff/ticket-updates/",
+            token=_ss, params={"ticket": new_ticket_id},
+            expected=200, label="Ticket updates list (with ticket id)", phase="SupportStaff")
+    else:
+        req("GET", "/api/support-staff/ticket-updates/",
+            token=_ss, expected=400,
+            label="Ticket updates list (no ticket param) -> 400", phase="SupportStaff")
+
+    sub("11.6  Escalations")
+    req("GET", "/api/support-staff/escalations/",
+        token=_ss, expected=200, label="Escalations list", phase="SupportStaff")
+
+    sub("11.7  Service History")
+    req("GET", "/api/support-staff/service-history/",
+        token=_ss, expected=200, label="Service history list", phase="SupportStaff")
+
+
+# =============================================================================
+# PHASE 12 -- DELIVERY PARTNER APIs
+# =============================================================================
+section("PHASE 12 -- Delivery Partner APIs")
+
+DELIVERY_MOBILE = "9000000020"   # Priya Sharma (delivery-partner), society 11
+
+sub("12.0  Delivery Partner login")
+delivery_token = None
+_, dp_body = req("POST", "/api/accounts/login/mobile/",
+                 json_body={"mobile": DELIVERY_MOBILE, "otp_code": OTP},
+                 expected=200, label="Delivery partner OTP login", phase="DeliveryPartner",
+                 show_fail=False)
+if dp_body:
+    delivery_token, _ = tokens_from(dp_body)
+if not delivery_token:
+    delivery_token = soc_token or sa_token
+    print("        [INFO] Delivery login failed — using society-admin token as fallback")
+else:
+    check(delivery_token is not None, "Delivery partner login returned access token")
+    if dp_body:
+        d = dp_body.get("data", {})
+        check(d.get("role", {}).get("slug") == "delivery-partner",
+              "Login role.slug == delivery-partner")
+        check(dp_body.get("home_route") == "delivery_partner_dashboard",
+              "Login home_route == delivery_partner_dashboard",
+              str(dp_body.get("home_route")))
+
+_dp = delivery_token
+if not _dp:
+    print("  !! No delivery partner token — skipping Phase 12")
+else:
+    sub("12.1  Dashboard")
+    _, dpd = req("GET", "/api/delivery-partner/dashboard/",
+                 token=_dp, expected=200, label="Delivery dashboard", phase="DeliveryPartner")
+    if dpd and isinstance(dpd, dict):
+        d = dpd.get("data") or {}
+        check("stats" in d, "Dashboard has stats")
+        s = d.get("stats") or {}
+        for k in ("total_today", "pending", "delivered", "failed"):
+            check(k in s, f"Dashboard stats has {k}")
+
+    sub("12.2  Auth guards")
+    req("GET", "/api/delivery-partner/dashboard/",
+        expected=401, label="No token -> 401", phase="DeliveryPartner")
+    if res_token:
+        req("GET", "/api/delivery-partner/dashboard/",
+            token=res_token, expected=403,
+            label="Resident on delivery dashboard -> 403", phase="DeliveryPartner")
+
+    sub("12.3  Active Deliveries -- list")
+    _, dl_list = req("GET", "/api/delivery-partner/active-deliveries/",
+                     token=_dp, expected=200,
+                     label="List active deliveries", phase="DeliveryPartner")
+    if dl_list:
+        cnt = dl_list.get("count", len(dl_list.get("results", [])))
+        print(f"        deliveries count={cnt}")
+
+    req("GET", "/api/delivery-partner/active-deliveries/",
+        token=_dp, params={"status": "pending"},
+        expected=200, label="Filter deliveries status=pending", phase="DeliveryPartner")
+
+    sub("12.4  Create delivery + pickup + delivered flow")
+    new_dlv_id = None
+    _soc_or_sa = soc_token or sa_token
+
+    if _soc_or_sa:
+        _, new_dlv = req("POST", "/api/delivery-partner/active-deliveries/",
+                         token=_dp,
+                         json_body={
+                             "item_name": f"E2E Package {_RUN}",
+                             "vendor_name": "Amazon",
+                             "tracking_number": f"TRK{_RUN}",
+                             "resident_name": "Aarav Sharma",
+                             "resident_phone": "9100000001",
+                             "flat_number": FLAT_NUMBER,
+                         },
+                         expected=201, label="Create delivery", phase="DeliveryPartner")
+        if new_dlv:
+            d = new_dlv.get("data") or new_dlv
+            new_dlv_id = d.get("id") if isinstance(d, dict) else None
+            if new_dlv_id:
+                check(d.get("status") == "pending", "New delivery status==pending",
+                      str(d.get("status")))
+                check("delivery_id" in d, "Delivery has delivery_id (DLV-XXXX)")
+
+    if new_dlv_id:
+        req("GET", f"/api/delivery-partner/active-deliveries/{new_dlv_id}/",
+            token=_dp, expected=200, label="Retrieve delivery", phase="DeliveryPartner")
+
+        _, pickup_r = req("PATCH", f"/api/delivery-partner/active-deliveries/{new_dlv_id}/pickup/",
+                          token=_dp, expected=200,
+                          label="Pickup delivery (PENDING -> OUT_FOR_DELIVERY)", phase="DeliveryPartner")
+        if pickup_r:
+            d = (pickup_r.get("data") or pickup_r)
+            check(d.get("status") == "out_for_delivery",
+                  "After pickup: status==out_for_delivery", str(d.get("status")))
+
+        _, delivered_r = req("PATCH", f"/api/delivery-partner/active-deliveries/{new_dlv_id}/delivered/",
+                             token=_dp,
+                             json_body={"delivery_note": "Left with security"},
+                             expected=200,
+                             label="Mark delivered (OUT_FOR_DELIVERY -> DELIVERED)", phase="DeliveryPartner")
+        if delivered_r:
+            d = (delivered_r.get("data") or delivered_r)
+            check(d.get("status") == "delivered", "After delivered: status==delivered",
+                  str(d.get("status")))
+
+        req("PATCH", f"/api/delivery-partner/active-deliveries/{new_dlv_id}/delivered/",
+            token=_dp, expected=400,
+            label="Double-deliver already-delivered -> 400", phase="DeliveryPartner")
+
+    sub("12.5  Delivery History")
+    _, dh_list = req("GET", "/api/delivery-partner/delivery-history/",
+                     token=_dp, expected=200,
+                     label="Delivery history", phase="DeliveryPartner")
+    if dh_list:
+        print(f"        history count={dh_list.get('count', '?')}")
+
+    sub("12.6  Access Pass -- get/create")
+    _, ap_resp = req("GET", "/api/delivery-partner/access-pass/",
+                     token=_dp, expected=200,
+                     label="GET/create access pass", phase="DeliveryPartner")
+    dp_passcode = dp_qr_value = None
+    if ap_resp and isinstance(ap_resp, dict):
+        d = ap_resp.get("data") or {}
+        check(d.get("status") == "active", "Access pass status==active",
+              str(d.get("status")))
+        check("passcode" in d, "Access pass has passcode field")
+        check("qr_code_value" in d, "Access pass has qr_code_value field")
+        check("valid_until" in d, "Access pass has valid_until field")
+        dp_passcode  = d.get("passcode")
+        dp_qr_value  = d.get("qr_code_value")
+        print(f"        passcode={dp_passcode}")
+
+    sub("12.7  Show QR Code")
+    _, qr_resp = req("GET", "/api/delivery-partner/access-pass/qr/",
+                     token=_dp, expected=200,
+                     label="Show QR code", phase="DeliveryPartner")
+    if qr_resp and isinstance(qr_resp, dict):
+        d = qr_resp.get("data") or {}
+        check("qr_code_value" in d, "QR response has qr_code_value")
+        check("passcode" in d, "QR response has passcode")
+        check("valid_until" in d, "QR response has valid_until")
+
+    sub("12.8  Entry Status")
+    _, es_resp = req("GET", "/api/delivery-partner/access-pass/entry-status/",
+                     token=_dp, expected=200,
+                     label="Entry status", phase="DeliveryPartner")
+    if es_resp and isinstance(es_resp, dict):
+        d = es_resp.get("data") or {}
+        check("entry_confirmed" in d, "Entry status has entry_confirmed field")
+        check("status" in d, "Entry status has status field")
+        check("passcode" in d, "Entry status has passcode field")
+
+    sub("12.9  OTP Verification")
+    # This app's urls.py is a stub (urlpatterns = []) — expect 404 until implemented
+    req("GET", "/api/delivery-partner/otp-verification/",
+        token=_dp, expected=[200, 404],
+        label="OTP verification (stub app, may 404)", phase="DeliveryPartner")
+
+    sub("12.10  Profile")
+    # This app's urls.py is a stub (urlpatterns = []) — expect 404 until implemented
+    req("GET", "/api/delivery-partner/profile/",
+        token=_dp, expected=[200, 404],
+        label="Delivery partner profile (stub app, may 404)", phase="DeliveryPartner")
+
+    sub("12.11  Cross-role: guest cannot access delivery endpoints -> 403")
+    if res_token:
+        req("GET", "/api/delivery-partner/access-pass/",
+            token=res_token, expected=403,
+            label="Resident on delivery access-pass -> 403", phase="DeliveryPartner")
+
+
+# =============================================================================
+# PHASE 13 -- GUEST USER APIs
+# =============================================================================
+section("PHASE 13 -- Guest User APIs")
+
+GUEST_MOBILE = "9000000030"   # Rahul Guest, guest-user, society 11
+
+sub("13.0  Guest User login")
+guest_token = None
+_, gu_body = req("POST", "/api/accounts/login/mobile/",
+                 json_body={"mobile": GUEST_MOBILE, "otp_code": OTP},
+                 expected=200, label="Guest user OTP login", phase="GuestUser",
+                 show_fail=False)
+if gu_body:
+    guest_token, _ = tokens_from(gu_body)
+if not guest_token:
+    guest_token = soc_token or sa_token
+    print("        [INFO] Guest login failed — using society-admin token as fallback")
+else:
+    check(guest_token is not None, "Guest user login returned access token")
+    if gu_body:
+        d = gu_body.get("data", {})
+        check(d.get("role", {}).get("slug") == "guest-user",
+              "Login role.slug == guest-user")
+        check(gu_body.get("home_route") == "guest_user_dashboard",
+              "Login home_route == guest_user_dashboard",
+              str(gu_body.get("home_route")))
+
+_gu = guest_token
+if not _gu:
+    print("  !! No guest user token — skipping Phase 13")
+else:
+    sub("13.1  Auth guards")
+    req("GET", "/api/guest/access-pass/",
+        expected=401, label="No token -> 401", phase="GuestUser")
+    if res_token:
+        req("GET", "/api/guest-user/access-pass/",
+            token=res_token, expected=403,
+            label="Resident on guest access-pass -> 403", phase="GuestUser")
+
+    sub("13.2  Access Pass -- get/create")
+    _, gap_resp = req("GET", "/api/guest-user/access-pass/",
+                      token=_gu, expected=200,
+                      label="GET/create guest access pass", phase="GuestUser")
+    gu_passcode = gu_qr_value = None
+    if gap_resp and isinstance(gap_resp, dict):
+        d = gap_resp.get("data") or {}
+        check(d.get("status") == "active", "Guest pass status==active",
+              str(d.get("status")))
+        check("passcode" in d, "Guest pass has passcode field")
+        check("qr_code_value" in d, "Guest pass has qr_code_value field")
+        check("valid_until" in d, "Guest pass has valid_until field")
+        gu_passcode = d.get("passcode")
+        gu_qr_value = d.get("qr_code_value")
+        print(f"        guest passcode={gu_passcode}")
+
+    sub("13.3  Show QR Code")
+    _, gqr_resp = req("GET", "/api/guest-user/access-pass/qr/",
+                      token=_gu, expected=200,
+                      label="Guest show QR code", phase="GuestUser")
+    if gqr_resp and isinstance(gqr_resp, dict):
+        d = gqr_resp.get("data") or {}
+        check("qr_code_value" in d, "Guest QR response has qr_code_value")
+        check("passcode" in d, "Guest QR response has passcode")
+        check("visitor_name" in d, "Guest QR response has visitor_name")
+
+    sub("13.4  Entry Status")
+    _, ges_resp = req("GET", "/api/guest-user/access-pass/entry-status/",
+                      token=_gu, expected=200,
+                      label="Guest entry status", phase="GuestUser")
+    if ges_resp and isinstance(ges_resp, dict):
+        d = ges_resp.get("data") or {}
+        check("entry_confirmed" in d, "Guest entry status has entry_confirmed")
+        check("status" in d, "Guest entry status has status field")
+        check("passcode" in d, "Guest entry status has passcode field")
+
+    sub("13.5  Old /api/guest/ prefix also works")
+    req("GET", "/api/guest/access-pass/",
+        token=_gu, expected=200,
+        label="Old /api/guest/access-pass/ prefix works", phase="GuestUser")
+
+    sub("13.6  Guest profile")
+    # This app's urls.py is a stub (urlpatterns = []) — expect 404 until implemented
+    req("GET", "/api/guest/profile/",
+        token=_gu, expected=[200, 404],
+        label="Guest profile (stub app, may 404)", phase="GuestUser")
+
+    sub("13.7  Cross-role: delivery partner cannot use guest endpoints -> 403")
+    if delivery_token and delivery_token not in (soc_token, sa_token):
+        req("GET", "/api/guest-user/access-pass/",
+            token=delivery_token, expected=403,
+            label="Delivery partner on guest access-pass -> 403", phase="GuestUser")
+
+
+# =============================================================================
+# PHASE 14 -- ACCESS PASS SCANNER (Security Guard)
+# =============================================================================
+section("PHASE 14 -- Access Pass Scanner (Security Guard)")
+
+_sg14 = guard_token or soc_token or sa_token
+
+if not _sg14:
+    print("  !! No guard token — skipping Phase 14")
+else:
+    sub("14.1  Auth guard on scanner endpoint")
+    req("POST", "/api/security-guard/scan-access-pass/",
+        json_body={"qr_code_value": "dummy"},
+        expected=401, label="No token scan -> 401", phase="Scanner")
+    if res_token:
+        req("POST", "/api/security-guard/scan-access-pass/",
+            token=res_token, json_body={"qr_code_value": "dummy"},
+            expected=403, label="Resident on scan -> 403", phase="Scanner")
+
+    sub("14.2  Scan with invalid QR -> 400")
+    _, inv_scan = req("POST", "/api/security-guard/scan-access-pass/",
+                      token=_sg14,
+                      json_body={"qr_code_value": "INVALID_QR_DOESNT_EXIST_E2E", "gate": "Main Gate"},
+                      expected=400, label="Scan invalid QR -> 400", phase="Scanner")
+    if inv_scan and isinstance(inv_scan, dict):
+        check("message" in inv_scan or "detail" in inv_scan, "Error response has message/detail")
+
+    sub("14.3  Scan with valid delivery-partner QR")
+    if dp_qr_value and dp_qr_value != gu_qr_value:
+        # NOTE: After this scan the pass becomes USED; subsequent scans will fail as expired/used
+        _, scan_dp = req("POST", "/api/security-guard/scan-access-pass/",
+                         token=_sg14,
+                         json_body={"qr_code_value": dp_qr_value, "gate": "East Gate"},
+                         expected=[200, 400],
+                         label=f"Scan delivery partner QR (may already be used)", phase="Scanner")
+        if scan_dp and isinstance(scan_dp, dict):
+            if scan_dp.get("status") == "success":
+                check("access_pass" in scan_dp, "Scan success has access_pass block")
+                ap_block = scan_dp.get("access_pass") or {}
+                check("passcode" in ap_block, "access_pass block has passcode")
+                check("visitor_name" in ap_block, "access_pass block has visitor_name")
+                check("gate" in ap_block, "access_pass block has gate")
+                check("entry_confirmed_at" in ap_block, "access_pass block has entry_confirmed_at")
+                print(f"        Scan success: visitor={ap_block.get('visitor_name')} gate={ap_block.get('gate')}")
+            else:
+                print(f"        Pass already used/expired (ok for repeat runs): {scan_dp.get('message')}")
+
+    sub("14.4  Scan with valid guest QR (new pass for clean state)")
+    # Request a fresh guest pass for scanning
+    if _gu:
+        _, fresh_gap = req("GET", "/api/guest-user/access-pass/",
+                           token=_gu, expected=200,
+                           label="Refresh guest access pass before scan", phase="Scanner",
+                           show_fail=False)
+        fresh_gu_qr = None
+        if fresh_gap and isinstance(fresh_gap, dict):
+            d = fresh_gap.get("data") or {}
+            if d.get("status") == "active":
+                fresh_gu_qr = d.get("qr_code_value")
+
+        if fresh_gu_qr:
+            _, scan_gu = req("POST", "/api/security-guard/scan-access-pass/",
+                             token=_sg14,
+                             json_body={"qr_code_value": fresh_gu_qr, "gate": "Main Gate"},
+                             expected=[200, 400],
+                             label="Scan guest user QR", phase="Scanner")
+            if scan_gu and isinstance(scan_gu, dict):
+                if scan_gu.get("status") == "success":
+                    ap_block = scan_gu.get("access_pass") or {}
+                    check("visitor_name" in ap_block, "Guest scan success has visitor_name")
+                    print(f"        Guest scan success: visitor={ap_block.get('visitor_name')}")
+
+    sub("14.5  Scan with passcode (text entry fallback)")
+    if dp_passcode:
+        _, scan_pc = req("POST", "/api/security-guard/scan-access-pass/",
+                         token=_sg14,
+                         json_body={"passcode": dp_passcode, "gate": "Main Gate"},
+                         expected=[200, 400],
+                         label="Scan by passcode (text entry)", phase="Scanner")
+        if scan_pc and isinstance(scan_pc, dict):
+            # If USED it returns 400; that's ok — we just verify the API handled it
+            check("status" in scan_pc or "message" in scan_pc,
+                  "Scan-by-passcode returns status or message")
+
+    sub("14.6  Access Scan Logs")
+    _, logs = req("GET", "/api/security-guard/access-scan-logs/",
+                  token=_sg14, expected=200,
+                  label="GET access scan logs", phase="Scanner")
+    if logs and isinstance(logs, dict):
+        results_list = logs.get("results") or []
+        check(isinstance(results_list, list), "Scan logs is a list")
+        if results_list:
+            first_log = results_list[0]
+            check("scan_result" in first_log, "Log has scan_result field")
+            check("gate" in first_log, "Log has gate field")
+            check("scanned_at" in first_log, "Log has scanned_at field")
+        print(f"        {len(results_list)} scan log(s) found")
+
+    sub("14.7  Missing body -> 400")
+    req("POST", "/api/security-guard/scan-access-pass/",
+        token=_sg14, json_body={},
+        expected=400, label="Empty scan body -> 400", phase="Scanner")
+
+
+# =============================================================================
 # SUMMARY
 # =============================================================================
 section("TEST SUMMARY")
@@ -1627,6 +2595,8 @@ pct    = 100 * passed // total if total else 0
 print(f"\n  Total  : {total}")
 print(f"  Passed : {passed}  ({pct}%)")
 print(f"  Failed : {failed}")
+
+
 
 if failed:
     print(f"\n  {'='*60}")

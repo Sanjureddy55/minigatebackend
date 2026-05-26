@@ -1,3 +1,7 @@
 from django.urls import path
 
-urlpatterns = []
+from .views import SecurityGuardDashboardView
+
+urlpatterns = [
+    path("", SecurityGuardDashboardView.as_view()),
+]

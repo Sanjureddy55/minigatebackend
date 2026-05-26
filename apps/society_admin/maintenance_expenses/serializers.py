@@ -10,6 +10,7 @@ class MaintenanceExpenseSerializer(serializers.ModelSerializer):
     created_by_name      = serializers.CharField(source="created_by.full_name",      read_only=True, allow_null=True)
     visibility_display   = serializers.SerializerMethodField()
     status_display       = serializers.SerializerMethodField()
+    proof_file_url       = serializers.SerializerMethodField()
 
     class Meta:
         model  = MaintenanceExpense
@@ -19,7 +20,7 @@ class MaintenanceExpenseSerializer(serializers.ModelSerializer):
             "amount", "vendor_name",
             "payment_mode", "payment_mode_display",
             "invoice_number", "building_area",
-            "proof_url",
+            "proof_url", "proof_file", "proof_file_url",
             "expense_date", "is_published",
             "visibility_display", "status_display",
             "created_by", "created_by_name", "notes",
@@ -32,6 +33,14 @@ class MaintenanceExpenseSerializer(serializers.ModelSerializer):
 
     def get_status_display(self, obj):
         return "Published" if obj.is_published else "Draft"
+
+    def get_proof_file_url(self, obj):
+        if obj.proof_file:
+            request = self.context.get("request")
+            if request:
+                return request.build_absolute_uri(obj.proof_file.url)
+            return obj.proof_file.url
+        return obj.proof_url or None
 
 
 class PublishedExpenseSerializer(serializers.ModelSerializer):

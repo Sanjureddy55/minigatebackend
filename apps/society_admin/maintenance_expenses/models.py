@@ -44,6 +44,7 @@ class MaintenanceExpense(models.Model):
     invoice_number = models.CharField(max_length=100, blank=True, default="", help_text="Invoice / bill reference number.")
     building_area  = models.CharField(max_length=200, blank=True, default="", help_text="Building or common area (e.g. Tower A, Common Area).")
     proof_url      = models.CharField(max_length=500, blank=True, default="", help_text="URL or filename of invoice/receipt document.")
+    proof_file     = models.FileField(upload_to="expense_proofs/%Y/%m/", blank=True, null=True, help_text="Uploaded invoice/receipt PDF or image.")
     expense_date   = models.DateField()
     is_published   = models.BooleanField(default=False, help_text="Published expenses are visible to residents.")
     created_by   = models.ForeignKey(

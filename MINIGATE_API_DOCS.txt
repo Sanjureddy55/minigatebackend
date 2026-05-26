@@ -1,0 +1,3825 @@
+================================================================================
+  MINIGATE BACKEND — COMPLETE API REFERENCE
+  For Frontend Integration Team
+  Base URL : http://127.0.0.1:8000          (dev)
+  Base URL : https://api.minigate.in        (prod — update when deployed)
+  Auth     : Bearer Token (JWT)
+  OTP      : Always 123456 in dev/staging
+================================================================================
+
+HOW TO USE THIS DOCUMENT
+─────────────────────────
+1. Every request that needs auth must include:
+   Header → Authorization: Bearer <access_token>
+
+2. Tokens are returned on login. The access token expires in 60 min.
+   Refresh it using POST /api/accounts/token/refresh/.
+
+3. Roles and what they can access:
+   super-admin     → Platform Admin APIs  (/api/platform-admin/*)
+   society-admin   → Society Admin APIs   (/api/society-admin/*)
+   accountant      → Accountant APIs      (/api/accountant/*)
+   resident        → Resident APIs        (/api/resident/*)
+   security-guard  → Guard APIs           (/api/security-guard/*)
+
+4. Errors always follow this shape:
+   { "success": false, "message": "Human readable error." }
+
+5. Validation errors follow this shape:
+   { "field_name": ["Error message."] }
+
+6. Share this file with Claude AI and say:
+   "This is my backend API doc. Help me integrate [endpoint name]."
+
+================================================================================
+  SECTION 1 — AUTHENTICATION  (No auth required)
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+1.1  SEND OTP
+────────────────────────────────────────────────────────────────────────────────
+Method : POST
+URL    : /api/accounts/otp/send/
+Auth   : None
+
+Request Body:
+{
+  "mobile": "9876543210"
+}
+
+Response 200:
+{
+  "success": true,
+  "message": "OTP sent to 9876543210. Valid for 10 minutes.",
+  "dev_otp": "123456"          ← only in DEBUG mode, remove in prod UI
+}
+
+Errors:
+  400 → { "mobile": ["This field is required."] }
+
+
+────────────────────────────────────────────────────────────────────────────────
+1.2  VERIFY OTP
+────────────────────────────────────────────────────────────────────────────────
+Method : POST
+URL    : /api/accounts/otp/verify/
+Auth   : None
+
+Request Body:
+{
+  "mobile":   "9876543210",
+  "otp_code": "123456"
+}
+
+Response 200:
+{
+  "success": true,
+  "message": "OTP verified. Proceed to onboarding."
+}
+
+Errors:
+  400 → { "success": false, "message": "Invalid or expired OTP." }
+
+
+────────────────────────────────────────────────────────────────────────────────
+1.3  LOGIN — EMAIL + PASSWORD  (Super Admin, Staff)
+────────────────────────────────────────────────────────────────────────────────
+Method : POST
+URL    : /api/accounts/login/email/
+Auth   : None
+
+Request Body:
+{
+  "email":    "superadmin@minigate.in",
+  "password": "123456"
+}
+
+Response 200:
+{
+  "success": true,
+  "message": "Login successful.",
+  "tokens": {
+    "access":  "<JWT access token>",
+    "refresh": "<JWT refresh token>"
+  },
+  "data": {
+    "user_id":  1,
+    "email":    "superadmin@minigate.in",
+    "username": "superadmin@minigate.in",
+    "profile": {
+      "id":          "1",
+      "full_name":   "Super Admin",
+      "mobile":      "9000000001",
+      "status":      "active",
+      "flat_number": null,
+      "role": {
+        "id":        1,
+        "name":      "Super Admin",
+        "slug":      "super-admin",
+        "role_type": "system"
+      },
+      "society": null
+    }
+  }
+}
+
+Errors:
+  400 → { "non_field_errors": ["Unable to log in with provided credentials."] }
+
+
+────────────────────────────────────────────────────────────────────────────────
+1.4  LOGIN — MOBILE + OTP  (All roles)
+────────────────────────────────────────────────────────────────────────────────
+Method : POST
+URL    : /api/accounts/login/mobile/
+Auth   : None
+
+Request Body:
+{
+  "mobile":   "9000000001",
+  "otp_code": "123456"
+}
+
+Response 200:
+{
+  "success":    true,
+  "message":    "Login successful.",
+  "home_route": "platform_admin_dashboard",
+  "tokens": {
+    "access":  "<JWT access token>",
+    "refresh": "<JWT refresh token>"
+  },
+  "data": {
+    "id":          "1",
+    "full_name":   "Super Admin",
+    "mobile":      "9000000001",
+    "email":       "superadmin@minigate.in",
+    "status":      "active",
+    "flat_number": null,
+    "role": {
+      "id":        1,
+      "name":      "Super Admin",
+      "slug":      "super-admin",
+      "role_type": "system"
+    },
+    "society": null,
+    "features": [
+      {
+        "module":     "manage_societies",
+        "label":      "Manage Societies",
+        "can_view":   true,
+        "can_create": true,
+        "can_edit":   true,
+        "can_delete": true
+      }
+      // ... more module permissions
+    ]
+  }
+}
+
+home_route values (use to redirect after login):
+  super-admin     → "platform_admin_dashboard"
+  society-admin   → "society_admin_dashboard"
+  resident        → "resident_dashboard"
+  accountant      → "accountant_dashboard"
+  security-guard  → "security_guard_dashboard"
+
+Errors:
+  400 → { "success": false, "message": "Incorrect OTP. Use 123456." }
+  403 → { "success": false, "message": "Your account is pending approval by the Society Admin." }
+  403 → { "success": false, "message": "Your account has been deactivated." }
+  404 → { "success": false, "message": "No account found for this mobile number." }
+
+
+────────────────────────────────────────────────────────────────────────────────
+1.5  REFRESH TOKEN
+────────────────────────────────────────────────────────────────────────────────
+Method : POST
+URL    : /api/accounts/token/refresh/
+Auth   : None
+
+Request Body:
+{
+  "refresh": "<refresh_token>"
+}
+
+Response 200:
+{
+  "access": "<new_access_token>"
+}
+
+Errors:
+  401 → { "detail": "Token is invalid or expired.", "code": "token_not_valid" }
+
+
+────────────────────────────────────────────────────────────────────────────────
+1.6  GET CURRENT USER PROFILE  (/me/)
+────────────────────────────────────────────────────────────────────────────────
+Method : GET
+URL    : /api/accounts/me/
+Auth   : Required (any role)
+
+Response 200:
+{
+  "success": true,
+  "data": {
+    "id":          "27",
+    "full_name":   "Aarav Sharma",
+    "mobile":      "9100000001",
+    "email":       "aarav@example.com",
+    "status":      "active",
+    "flat_number": "A-101",
+    "role": {
+      "id":        3,
+      "name":      "Resident",
+      "slug":      "resident",
+      "role_type": "resident"
+    },
+    "society": {
+      "id":   11,
+      "name": "Greenwood Heights",
+      "city": "Bangalore",
+      "plan": "premium"
+    }
+  }
+}
+
+Errors:
+  401 → { "detail": "Authentication credentials were not provided." }
+
+
+────────────────────────────────────────────────────────────────────────────────
+1.7  MY HOME SCREEN (Resident)
+────────────────────────────────────────────────────────────────────────────────
+Method : GET
+URL    : /api/accounts/my-home/?mobile=9100000001
+Auth   : None
+
+Response 200:
+{
+  "success": true,
+  "data": {
+    "full_name":   "Aarav Sharma",
+    "mobile":      "9100000001",
+    "flat_number": "A-101",
+    "society":     "Greenwood Heights",
+    "role":        "Resident",
+    "status":      "active",
+    "flat_detail": {
+      "id":          "0d241424-4712-4be2-8a1c-984cd3c2297b",
+      "flat_number": "A-101",
+      "building":    "Tower A",
+      "society":     "Greenwood Heights",
+      "city":        "Bangalore"
+    }
+  }
+}
+
+Errors:
+  400 → { "success": false, "message": "mobile query param required." }
+  403 → { "success": false, "message": "Your account is pending approval." }
+  404 → { "success": false, "message": "Profile not found." }
+
+
+────────────────────────────────────────────────────────────────────────────────
+1.8  ONBOARDING LOOKUP — COUNTRIES
+────────────────────────────────────────────────────────────────────────────────
+Method : GET
+URL    : /api/accounts/onboarding/countries/
+Auth   : None
+
+Response 200:
+{
+  "success": true,
+  "count":   1,
+  "results": [
+    { "id": 1, "name": "India", "code": "IN" }
+  ]
+}
+
+
+────────────────────────────────────────────────────────────────────────────────
+1.9  ONBOARDING LOOKUP — CITIES
+────────────────────────────────────────────────────────────────────────────────
+Method : GET
+URL    : /api/accounts/onboarding/cities/?country=1
+Auth   : None
+
+Response 200:
+{
+  "success": true,
+  "count":   5,
+  "results": [
+    { "id": 1, "name": "Bangalore", "country": 1 },
+    { "id": 2, "name": "Mumbai",    "country": 1 }
+  ]
+}
+
+
+────────────────────────────────────────────────────────────────────────────────
+1.10 ONBOARDING LOOKUP — SOCIETIES
+────────────────────────────────────────────────────────────────────────────────
+Method : GET
+URL    : /api/accounts/onboarding/societies/?city=1
+Auth   : None
+Params : city (int), city_name (string, partial match)
+
+Response 200:
+{
+  "success": true,
+  "count":   3,
+  "results": [
+    {
+      "id":   11,
+      "name": "Greenwood Heights",
+      "city": "Bangalore"
+    }
+  ]
+}
+
+
+────────────────────────────────────────────────────────────────────────────────
+1.11 ONBOARDING LOOKUP — BUILDINGS
+────────────────────────────────────────────────────────────────────────────────
+Method : GET
+URL    : /api/accounts/onboarding/buildings/?society=11
+Auth   : None
+
+Response 200:
+{
+  "success": true,
+  "count":   1,
+  "results": [
+    {
+      "id":      "c4f05d42-52dd-4d46-94f0-ba424276d2d7",
+      "name":    "Tower A",
+      "society": 11
+    }
+  ]
+}
+
+
+────────────────────────────────────────────────────────────────────────────────
+1.12 ONBOARDING LOOKUP — FLATS
+────────────────────────────────────────────────────────────────────────────────
+Method : GET
+URL    : /api/accounts/onboarding/flats/?society=11
+Alt    : /api/accounts/onboarding/flats/?building=<uuid>
+Auth   : None
+
+Response 200:
+{
+  "success": true,
+  "count":   6,
+  "results": [
+    {
+      "id":          "0d241424-4712-4be2-8a1c-984cd3c2297b",
+      "flat_number": "A-101",
+      "building":    "c4f05d42-52dd-4d46-94f0-ba424276d2d7"
+    }
+  ]
+}
+
+
+────────────────────────────────────────────────────────────────────────────────
+1.13 RESIDENT ONBOARDING — COMPLETE REGISTRATION
+────────────────────────────────────────────────────────────────────────────────
+Method : POST
+URL    : /api/accounts/onboarding/complete/
+Auth   : None
+Note   : OTP must be verified (via 1.2) before calling this.
+
+Request Body:
+{
+  "mobile":     "9876543210",
+  "full_name":  "Rohan Mehta",
+  "country_id": 1,
+  "city_id":    1,
+  "society_id": 11,
+  "flat_number": "B-202"
+}
+
+Response 201:
+{
+  "success": true,
+  "message": "Registration submitted. Awaiting Society Admin approval.",
+  "tokens": {
+    "access":  "<JWT access token>",
+    "refresh": "<JWT refresh token>"
+  },
+  "data": {
+    "id":          "31",
+    "full_name":   "Rohan Mehta",
+    "mobile":      "9876543210",
+    "status":      "pending",
+    "flat_number": "B-202",
+    "role": { ... },
+    "society": { "id": 11, "name": "Greenwood Heights", ... }
+  }
+}
+
+Errors:
+  400 → { "mobile": ["A user with this mobile already exists."] }
+
+
+────────────────────────────────────────────────────────────────────────────────
+1.14 APPROVAL STATUS POLL
+────────────────────────────────────────────────────────────────────────────────
+Method : GET
+URL    : /api/accounts/onboarding/approval-status/?mobile=9876543210
+Auth   : None
+Note   : Resident polls this while waiting for Society Admin approval.
+
+Response 200:
+{
+  "success": true,
+  "data": {
+    "status":         "pending",
+    "status_display": "Pending",
+    "is_approved":    false,
+    "is_rejected":    false,
+    "society_name":   "Greenwood Heights",
+    "flat_number":    "B-202",
+    "steps": [
+      {
+        "key":    "submitted",
+        "label":  "Application submitted to society",
+        "detail": "We've sent your request on 23 May 2026, 10:00 AM",
+        "done":   true
+      },
+      {
+        "key":    "reminding",
+        "label":  "We're reminding",
+        "detail": "We send reminders every 24 Hours",
+        "done":   false
+      },
+      {
+        "key":    "verified",
+        "label":  "Verification by Society Admin",
+        "detail": "Most approvals happen within 72 hours.",
+        "done":   false
+      }
+    ]
+  }
+}
+
+Errors:
+  404 → { "success": false, "message": "No account found for this mobile." }
+
+
+================================================================================
+  SECTION 2 — PLATFORM ADMIN APIs
+  Auth: Bearer token with role = super-admin
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+2.1  PLATFORM DASHBOARD — STATS
+────────────────────────────────────────────────────────────────────────────────
+Method : GET
+URL    : /api/platform-admin/dashboard/stats/
+Auth   : super-admin
+
+Response 200:
+{
+  "success": true,
+  "data": {
+    "total_societies":  20,
+    "active_societies": 17,
+    "total_users":      120,
+    "active_users":     98,
+    "open_tickets":     12,
+    "monthly_revenue":  "450000.00"
+  }
+}
+
+
+────────────────────────────────────────────────────────────────────────────────
+2.2  PLATFORM DASHBOARD — SOCIETIES LIST
+────────────────────────────────────────────────────────────────────────────────
+Method : GET
+URL    : /api/platform-admin/dashboard/societies/
+Auth   : super-admin
+Params : search, status, plan, city, ordering, page, page_size
+
+Response 200:
+{
+  "success": true,
+  "count": 20,
+  "next":  null,
+  "previous": null,
+  "results": [
+    {
+      "id":           11,
+      "name":         "Greenwood Heights",
+      "city":         "Bangalore",
+      "status":       "active",
+      "plan":         "premium",
+      "user_count":   6,
+      "open_tickets": 2,
+      "created_at":   "2026-01-15T10:00:00Z"
+    }
+  ]
+}
+
+
+────────────────────────────────────────────────────────────────────────────────
+2.3  SOCIETIES — LIST + CREATE
+────────────────────────────────────────────────────────────────────────────────
+Method : GET
+URL    : /api/platform-admin/create-society/
+Auth   : super-admin
+Params : search, status, plan, city_id, ordering, page, page_size
+
+Response 200:
+{
+  "count": 20,
+  "results": [
+    {
+      "id":         11,
+      "name":       "Greenwood Heights",
+      "address":    "123 Main Street, Bangalore",
+      "city":       1,
+      "plan":       "premium",
+      "status":     "active",
+      "created_at": "2026-01-15T10:00:00Z"
+    }
+  ]
+}
+
+───
+
+Method : POST
+URL    : /api/platform-admin/create-society/
+Auth   : super-admin
+
+Request Body:
+{
+  "name":    "Sunrise Apartments",
+  "address": "456 Park Road, Mumbai",
+  "city":    2,
+  "plan":    "basic",
+  "status":  "active"
+}
+
+plan values: "basic", "premium", "enterprise"
+status values: "active", "inactive", "suspended"
+
+Response 201:
+{
+  "id":         25,
+  "name":       "Sunrise Apartments",
+  "address":    "456 Park Road, Mumbai",
+  "city":       2,
+  "plan":       "basic",
+  "status":     "active",
+  "created_at": "2026-05-23T10:00:00Z"
+}
+
+Errors:
+  400 → { "name": ["Society with this name already exists."] }
+
+
+────────────────────────────────────────────────────────────────────────────────
+2.4  SOCIETIES — RETRIEVE / UPDATE / DELETE
+────────────────────────────────────────────────────────────────────────────────
+Method : GET    /api/platform-admin/create-society/{id}/
+Method : PATCH  /api/platform-admin/create-society/{id}/
+Method : DELETE /api/platform-admin/create-society/{id}/
+Auth   : super-admin
+
+PATCH Request Body (any fields, all optional):
+{
+  "plan":   "enterprise",
+  "status": "suspended"
+}
+
+Response 200:
+{ "id": 11, "name": "Greenwood Heights", "plan": "enterprise", ... }
+
+Errors:
+  404 → { "detail": "Not found." }
+
+
+────────────────────────────────────────────────────────────────────────────────
+2.5  SUBSCRIPTION PLANS — CRUD
+────────────────────────────────────────────────────────────────────────────────
+Method : GET    /api/platform-admin/subscription-plans/
+Method : POST   /api/platform-admin/subscription-plans/
+Method : GET    /api/platform-admin/subscription-plans/{id}/
+Method : PATCH  /api/platform-admin/subscription-plans/{id}/
+Method : DELETE /api/platform-admin/subscription-plans/{id}/
+Auth   : super-admin
+
+POST Request Body:
+{
+  "name":         "Enterprise Pro",
+  "price":        9999.00,
+  "billing_cycle": "monthly",
+  "features":     "Unlimited flats, priority support",
+  "is_active":    true
+}
+
+Response 200 (list):
+{
+  "count": 3,
+  "results": [
+    {
+      "id":           1,
+      "name":         "Basic",
+      "price":        "999.00",
+      "billing_cycle": "monthly",
+      "features":     "Up to 50 flats",
+      "is_active":    true
+    }
+  ]
+}
+
+DELETE Response 200:
+{ "success": true, "message": "Plan deleted." }
+
+
+────────────────────────────────────────────────────────────────────────────────
+2.6  GLOBAL USERS
+────────────────────────────────────────────────────────────────────────────────
+Method : GET
+URL    : /api/platform-admin/global-users/
+Auth   : super-admin
+Params : search, role, status, society, page, page_size
+
+Response 200:
+{
+  "count": 30,
+  "results": [
+    {
+      "id":         "1",
+      "full_name":  "Super Admin",
+      "mobile":     "9000000001",
+      "email":      "superadmin@minigate.in",
+      "status":     "active",
+      "role":       { "id": 1, "name": "Super Admin", "slug": "super-admin" },
+      "society":    null,
+      "created_at": "2026-01-01T00:00:00Z"
+    }
+  ]
+}
+
+
+────────────────────────────────────────────────────────────────────────────────
+2.7  GLOBAL REPORTS
+────────────────────────────────────────────────────────────────────────────────
+Method : GET  /api/platform-admin/global-reports/
+Method : GET  /api/platform-admin/global-reports/revenue/
+Method : GET  /api/platform-admin/global-reports/society-growth/
+Auth   : super-admin
+
+Response 200 (overview):
+{ "success": true, "data": { "total_societies": 20, "total_revenue": "900000.00", ... } }
+
+
+────────────────────────────────────────────────────────────────────────────────
+2.8  AUDIT LOGS
+────────────────────────────────────────────────────────────────────────────────
+Method : GET
+URL    : /api/platform-admin/audit-logs/
+Auth   : super-admin
+Params : page, page_size
+
+Response 200:
+{
+  "count": 150,
+  "results": [
+    {
+      "id":         1,
+      "action":     "LOGIN",
+      "user":       "superadmin@minigate.in",
+      "ip_address": "127.0.0.1",
+      "timestamp":  "2026-05-23T10:00:00Z",
+      "details":    "Email login successful"
+    }
+  ]
+}
+
+
+────────────────────────────────────────────────────────────────────────────────
+2.9  SYSTEM SETTINGS
+────────────────────────────────────────────────────────────────────────────────
+Method : GET
+URL    : /api/platform-admin/system-settings/
+Auth   : super-admin
+
+Response 200:
+{
+  "maintenance_mode": false,
+  "otp_validity_minutes": 10,
+  "max_login_attempts": 5,
+  "support_email": "support@minigate.in"
+}
+
+Method : PATCH
+URL    : /api/platform-admin/system-settings/
+Auth   : super-admin
+
+Request Body (any fields):
+{
+  "maintenance_mode": true
+}
+
+Response 200: (same as GET with updated values)
+
+
+────────────────────────────────────────────────────────────────────────────────
+2.10 SOCIETY ADMINS — MANAGE
+────────────────────────────────────────────────────────────────────────────────
+Method : GET
+URL    : /api/platform-admin/society-admins/
+Auth   : super-admin
+
+Response 200:
+{
+  "count": 5,
+  "results": [
+    {
+      "id":        "26",
+      "full_name": "Priya Sharma",
+      "mobile":    "9000000002",
+      "society":   { "id": 11, "name": "Greenwood Heights" },
+      "status":    "active"
+    }
+  ]
+}
+
+
+================================================================================
+  SECTION 3 — SOCIETY ADMIN APIs
+  Auth: Bearer token with role = society-admin
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+3.1  SOCIETY ADMIN DASHBOARD
+────────────────────────────────────────────────────────────────────────────────
+Method : GET
+URL    : /api/society-admin/dashboard/
+Auth   : society-admin
+Params : society=11  (optional — auto-detected from profile)
+
+Response 200:
+{
+  "success": true,
+  "data": {
+    "total_flats":        24,
+    "occupied_flats":     18,
+    "total_residents":    22,
+    "pending_approvals":  3,
+    "open_complaints":    5,
+    "pending_payments":   8,
+    "upcoming_visitors":  2
+  }
+}
+
+
+────────────────────────────────────────────────────────────────────────────────
+3.2  BUILDINGS — LIST + CREATE
+────────────────────────────────────────────────────────────────────────────────
+Method : GET
+URL    : /api/society-admin/buildings/
+Auth   : society-admin
+Params : society=11
+
+Response 200:
+{
+  "count": 1,
+  "results": [
+    {
+      "id":      "c4f05d42-52dd-4d46-94f0-ba424276d2d7",
+      "name":    "Tower A",
+      "society": 11,
+      "floors":  5,
+      "flats_count": 6
+    }
+  ]
+}
+
+
+────────────────────────────────────────────────────────────────────────────────
+3.3  FLATS — LIST + CREATE
+────────────────────────────────────────────────────────────────────────────────
+Method : GET
+URL    : /api/society-admin/flats/
+Auth   : society-admin
+Params : society=11, building=<uuid>, search
+
+Response 200:
+{
+  "count": 6,
+  "results": [
+    {
+      "id":          "0d241424-4712-4be2-8a1c-984cd3c2297b",
+      "flat_number": "A-101",
+      "building":    "c4f05d42-52dd-4d46-94f0-ba424276d2d7",
+      "floor":       1,
+      "type":        "2BHK",
+      "is_occupied": true
+    }
+  ]
+}
+
+
+────────────────────────────────────────────────────────────────────────────────
+3.4  NOTICE BOARD — FULL CRUD
+────────────────────────────────────────────────────────────────────────────────
+Method : GET    /api/society-admin/notice-board/
+Method : POST   /api/society-admin/notice-board/
+Method : GET    /api/society-admin/notice-board/{id}/
+Method : PATCH  /api/society-admin/notice-board/{id}/
+Method : DELETE /api/society-admin/notice-board/{id}/
+Auth   : society-admin
+
+POST Request Body:
+{
+  "title":    "Water Supply Shutdown",
+  "content":  "Water will be shut off on 25 May from 10am to 2pm.",
+  "priority": "high",
+  "is_active": true
+}
+
+priority values: "low", "medium", "high", "urgent"
+
+Response 201:
+{
+  "id":         15,
+  "title":      "Water Supply Shutdown",
+  "content":    "Water will be shut off on 25 May from 10am to 2pm.",
+  "priority":   "high",
+  "is_active":  true,
+  "created_at": "2026-05-23T10:00:00Z",
+  "created_by": "Priya Sharma"
+}
+
+DELETE Response 200:
+{ "success": true, "message": "Notice deleted." }
+
+
+────────────────────────────────────────────────────────────────────────────────
+3.5  COMPLAINTS (Society Admin view — read-only)
+────────────────────────────────────────────────────────────────────────────────
+Method : GET
+URL    : /api/society-admin/complaints/
+Auth   : society-admin
+Params : status, category, search, page, page_size
+
+Response 200:
+{
+  "count": 5,
+  "results": [
+    {
+      "id":               1,
+      "complaint_number": "CMP-001",
+      "title":            "Water leakage in corridor",
+      "category":         "maintenance",
+      "status":           "open",
+      "flat_number":      "A-101",
+      "resident_name":    "Aarav Sharma",
+      "created_at":       "2026-05-20T09:00:00Z"
+    }
+  ]
+}
+
+
+────────────────────────────────────────────────────────────────────────────────
+3.6  RESIDENTS — LIST + APPROVE
+────────────────────────────────────────────────────────────────────────────────
+Method : GET
+URL    : /api/society-admin/residents/
+Auth   : society-admin
+Params : status, search, flat_number, page, page_size
+
+Response 200:
+{
+  "count": 22,
+  "results": [
+    {
+      "id":          "27",
+      "full_name":   "Aarav Sharma",
+      "mobile":      "9100000001",
+      "flat_number": "A-101",
+      "status":      "active",
+      "joined_at":   "2026-01-10T00:00:00Z"
+    }
+  ]
+}
+
+
+────────────────────────────────────────────────────────────────────────────────
+3.7  APPROVALS QUEUE — LIST + APPROVE/REJECT
+────────────────────────────────────────────────────────────────────────────────
+Method : GET
+URL    : /api/society-admin/approvals/
+Auth   : society-admin
+
+Response 200:
+{
+  "count": 3,
+  "results": [
+    {
+      "id":          "31",
+      "full_name":   "Rohan Mehta",
+      "mobile":      "9876543210",
+      "flat_number": "B-202",
+      "status":      "pending",
+      "created_at":  "2026-05-23T10:00:00Z"
+    }
+  ]
+}
+
+
+────────────────────────────────────────────────────────────────────────────────
+3.8  ROLES & ACCESS — MANAGE ROLES
+────────────────────────────────────────────────────────────────────────────────
+Method : GET    /api/society-admin/roles-access/
+Method : POST   /api/society-admin/roles-access/
+Method : GET    /api/society-admin/roles-access/{id}/
+Method : PATCH  /api/society-admin/roles-access/{id}/
+Method : DELETE /api/society-admin/roles-access/{id}/
+Auth   : society-admin
+
+POST Request Body:
+{
+  "name":        "Security Supervisor",
+  "description": "Manages security guards",
+  "role_type":   "operational",
+  "is_active":   true,
+  "module_permissions": [
+    { "module": "view_visitors", "can_view": true, "can_create": false, "can_edit": false, "can_delete": false }
+  ]
+}
+
+role_type values: "operational", "resident", "external"
+
+
+────────────────────────────────────────────────────────────────────────────────
+3.9  ROLES & ACCESS — ASSIGN USER TO ROLE
+────────────────────────────────────────────────────────────────────────────────
+Method : POST
+URL    : /api/society-admin/roles-access/{role_id}/assign-user/
+Auth   : society-admin
+
+Request Body:
+{
+  "full_name":   "Ravi Kumar",
+  "email":       "ravi@greenwood.in",
+  "mobile":      "9000000010",
+  "status":      "active",
+  "description": "Main gate accountant"
+}
+
+Note: society is automatically set from the logged-in society admin's profile.
+      Password defaults to 123456. Welcome email is sent.
+
+Response 201:
+{
+  "success": true,
+  "message": "User created and welcome email sent.",
+  "data": {
+    "id":        "35",
+    "full_name": "Ravi Kumar",
+    "mobile":    "9000000010",
+    "email":     "ravi@greenwood.in",
+    "role":      { "id": 5, "name": "Accountant", "slug": "accountant" },
+    "status":    "active"
+  }
+}
+
+
+────────────────────────────────────────────────────────────────────────────────
+3.10 MAINTENANCE EXPENSES (Society Admin view)
+────────────────────────────────────────────────────────────────────────────────
+Method : GET
+URL    : /api/society-admin/maintenance-expenses/
+Auth   : society-admin
+Params : is_published, category, search, page, page_size
+
+Response 200:
+{
+  "count": 7,
+  "results": [
+    {
+      "id":           1,
+      "title":        "Water pump repair",
+      "category":     "repairs",
+      "amount":       "15000.00",
+      "is_published": true,
+      "expense_date": "2026-04-10",
+      "created_at":   "2026-04-12T10:00:00Z"
+    }
+  ]
+}
+
+
+────────────────────────────────────────────────────────────────────────────────
+3.11 MONTHLY STATEMENTS (Society Admin view)
+────────────────────────────────────────────────────────────────────────────────
+Method : GET
+URL    : /api/society-admin/monthly-statements/
+Auth   : society-admin
+
+Response 200:
+{
+  "count": 4,
+  "results": [
+    {
+      "id":              5,
+      "month":           "2026-03-01",
+      "month_label":     "March 2026",
+      "is_published":    false,
+      "total_collected": "0.00",
+      "total_expenses":  "0.00",
+      "closing_balance": "5000.00"
+    }
+  ]
+}
+
+
+────────────────────────────────────────────────────────────────────────────────
+3.12 ANALYTICS
+────────────────────────────────────────────────────────────────────────────────
+Method : GET
+URL    : /api/society-admin/analytics/
+Auth   : society-admin
+Params : period (month, quarter, year), society=11
+
+Response 200:
+{
+  "success": true,
+  "data": {
+    "total_income":   "125000.00",
+    "total_expenses": "45000.00",
+    "net_balance":    "80000.00",
+    "monthly_trend":  [ ... ]
+  }
+}
+
+
+────────────────────────────────────────────────────────────────────────────────
+3.13 SETTINGS (Society-level)
+────────────────────────────────────────────────────────────────────────────────
+Method : GET    /api/society-admin/settings/
+Method : PATCH  /api/society-admin/settings/
+Auth   : society-admin
+
+PATCH Request Body:
+{
+  "late_fee_enabled": true,
+  "late_fee_amount":  500,
+  "notification_email": "admin@greenwood.in"
+}
+
+Response 200: current settings object
+
+
+================================================================================
+  SECTION 4 — RESIDENT APIs
+  Auth: Bearer token with role = resident  (status must be "active")
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+4.1  RESIDENT DASHBOARD
+────────────────────────────────────────────────────────────────────────────────
+Method : GET
+URL    : /api/resident/dashboard/
+Auth   : resident
+
+Response 200:
+{
+  "success": true,
+  "data": {
+    "flat_number":      "A-101",
+    "society_name":     "Greenwood Heights",
+    "pending_dues":     2,
+    "open_complaints":  1,
+    "upcoming_visitors": 0,
+    "unread_notices":   3
+  }
+}
+
+
+────────────────────────────────────────────────────────────────────────────────
+4.2  MY FLATS — LIST + ADD + REMOVE + SWITCH PRIMARY
+────────────────────────────────────────────────────────────────────────────────
+Method : GET
+URL    : /api/resident/profile/my-flats/
+Auth   : resident
+
+Response 200:
+{
+  "count": 1,
+  "results": [
+    {
+      "id":          11,
+      "flat_id":     "0d241424-4712-4be2-8a1c-984cd3c2297b",
+      "flat_number": "A-101",
+      "building":    "Tower A",
+      "society":     "Greenwood Heights",
+      "status":      "approved",
+      "is_primary":  true
+    }
+  ]
+}
+
+Method : POST  /api/resident/profile/my-flats/
+Request Body:
+{
+  "flat_id":    "0d241424-4712-4be2-8a1c-984cd3c2297b",
+  "society_id": 11
+}
+Response 201: new flat link object
+
+Method : DELETE  /api/resident/profile/my-flats/{id}/
+Response 200: { "success": true, "message": "Flat removed." }
+
+Method : POST  /api/resident/profile/my-flats/{id}/switch-primary/
+Response 200: { "success": true, "message": "Primary flat updated." }
+
+Errors:
+  400 → { "success": false, "message": "Flat already linked to your account." }
+  400 → { "success": false, "message": "Cannot switch to a pending flat." }
+
+
+────────────────────────────────────────────────────────────────────────────────
+4.3  COMPLAINTS — LIST + CREATE + UPDATE
+────────────────────────────────────────────────────────────────────────────────
+Method : GET
+URL    : /api/resident/complaints/
+Auth   : resident
+Params : status, category, page, page_size
+
+Response 200:
+{
+  "count": 2,
+  "results": [
+    {
+      "id":               1,
+      "complaint_number": "CMP-001",
+      "title":            "Water leakage",
+      "category":         "maintenance",
+      "status":           "open",
+      "created_at":       "2026-05-20T09:00:00Z"
+    }
+  ]
+}
+
+Method : POST
+URL    : /api/resident/complaints/
+Request Body:
+{
+  "title":    "Lift not working",
+  "category": "maintenance",
+  "description": "Lift in Tower A has been stuck since morning."
+}
+
+category values: "maintenance", "security", "hygiene", "noise", "parking", "other"
+
+Response 201:
+{
+  "id":               5,
+  "complaint_number": "CMP-005",
+  "title":            "Lift not working",
+  "category":         "maintenance",
+  "status":           "open",
+  "description":      "Lift in Tower A has been stuck since morning.",
+  "created_at":       "2026-05-23T10:00:00Z"
+}
+
+Method : PATCH  /api/resident/complaints/{id}/
+Request Body: { "status": "resolved" }  or any field
+
+
+────────────────────────────────────────────────────────────────────────────────
+4.4  NOTICES — READ ONLY
+────────────────────────────────────────────────────────────────────────────────
+Method : GET
+URL    : /api/resident/notices/
+Auth   : resident
+Params : priority, is_active, page
+
+Response 200:
+{
+  "count": 3,
+  "results": [
+    {
+      "id":       1,
+      "title":    "Water Shutdown",
+      "content":  "Water will be off on 25 May.",
+      "priority": "high",
+      "created_at": "2026-05-23T09:00:00Z"
+    }
+  ]
+}
+
+
+────────────────────────────────────────────────────────────────────────────────
+4.5  PAYMENTS (Resident view — read only)
+────────────────────────────────────────────────────────────────────────────────
+Method : GET
+URL    : /api/resident/payments/
+Auth   : resident
+Params : status, page
+
+Response 200:
+{
+  "count": 3,
+  "results": [
+    {
+      "id":             25,
+      "month":          "2025-12-01",
+      "amount":         "2500.00",
+      "status":         "paid",
+      "payment_date":   "2025-12-10",
+      "payment_method": "upi"
+    }
+  ]
+}
+
+
+────────────────────────────────────────────────────────────────────────────────
+4.6  PROFILE — FAMILY MEMBERS CRUD
+────────────────────────────────────────────────────────────────────────────────
+Method : GET    /api/resident/profile/family-members/
+Method : POST   /api/resident/profile/family-members/
+Method : GET    /api/resident/profile/family-members/{id}/
+Method : PATCH  /api/resident/profile/family-members/{id}/
+Method : DELETE /api/resident/profile/family-members/{id}/
+Auth   : resident
+
+POST Request Body:
+{
+  "full_name":   "Meera Sharma",
+  "relation":    "spouse",
+  "mobile":      "9876543200",
+  "date_of_birth": "1990-06-15"
+}
+
+relation values: "spouse", "child", "parent", "sibling", "other"
+
+Response 201:
+{
+  "id":            3,
+  "full_name":     "Meera Sharma",
+  "relation":      "spouse",
+  "mobile":        "9876543200",
+  "date_of_birth": "1990-06-15"
+}
+
+DELETE Response 200: { "success": true, "message": "Family member removed." }
+
+
+────────────────────────────────────────────────────────────────────────────────
+4.7  PROFILE — VEHICLES CRUD
+────────────────────────────────────────────────────────────────────────────────
+Method : GET    /api/resident/profile/vehicles/
+Method : POST   /api/resident/profile/vehicles/
+Method : PATCH  /api/resident/profile/vehicles/{id}/
+Method : DELETE /api/resident/profile/vehicles/{id}/
+Auth   : resident
+
+POST Request Body:
+{
+  "vehicle_type":        "car",
+  "vehicle_number":      "KA01AB1234",
+  "vehicle_model":       "Honda City",
+  "color":               "White",
+  "parking_slot":        "P-12"
+}
+
+vehicle_type values: "car", "motorcycle", "bicycle", "other"
+
+Errors:
+  400 → { "vehicle_number": ["A vehicle with this plate already exists."] }
+
+
+────────────────────────────────────────────────────────────────────────────────
+4.8  PROFILE — PETS CRUD
+────────────────────────────────────────────────────────────────────────────────
+Method : GET    /api/resident/profile/pets/
+Method : POST   /api/resident/profile/pets/
+Method : DELETE /api/resident/profile/pets/{id}/
+Auth   : resident
+
+POST Request Body:
+{
+  "name":       "Bruno",
+  "pet_type":   "dog",
+  "breed":      "Labrador",
+  "is_vaccinated": true
+}
+
+
+────────────────────────────────────────────────────────────────────────────────
+4.9  PROFILE — DAILY HELP CRUD
+────────────────────────────────────────────────────────────────────────────────
+Method : GET    /api/resident/profile/daily-help/
+Method : POST   /api/resident/profile/daily-help/
+Method : DELETE /api/resident/profile/daily-help/{id}/
+Auth   : resident
+
+POST Request Body:
+{
+  "full_name":   "Sunita Devi",
+  "help_type":   "maid",
+  "mobile":      "9600000001",
+  "id_proof":    "AADHAAR-1234"
+}
+
+help_type values: "maid", "cook", "driver", "gardener", "other"
+
+
+────────────────────────────────────────────────────────────────────────────────
+4.10 VISITORS
+────────────────────────────────────────────────────────────────────────────────
+Method : GET
+URL    : /api/resident/visitors/
+Auth   : resident
+Params : status, page
+
+Response 200:
+{
+  "count": 2,
+  "results": [
+    {
+      "id":          1,
+      "visitor_name": "Amit Patel",
+      "purpose":     "personal",
+      "visit_date":  "2026-05-25",
+      "status":      "pending"
+    }
+  ]
+}
+
+
+────────────────────────────────────────────────────────────────────────────────
+4.11 SOS ALERTS
+────────────────────────────────────────────────────────────────────────────────
+Method : GET
+URL    : /api/resident/sos/
+Auth   : resident
+
+Response 200: list of SOS alerts sent by resident.
+
+
+────────────────────────────────────────────────────────────────────────────────
+4.12 MAINTENANCE TRANSPARENCY (Published expenses only)
+────────────────────────────────────────────────────────────────────────────────
+Method : GET
+URL    : /api/resident/maintenance-transparency/
+Auth   : resident
+
+Response 200:
+{
+  "count": 5,
+  "results": [
+    {
+      "id":           1,
+      "title":        "Water pump repair",
+      "category":     "repairs",
+      "amount":       "15000.00",
+      "expense_date": "2026-04-10",
+      "description":  "Replaced main pump motor."
+    }
+  ]
+}
+
+
+────────────────────────────────────────────────────────────────────────────────
+4.13 MONTHLY STATEMENTS (Resident — Published only)
+────────────────────────────────────────────────────────────────────────────────
+Method : GET
+URL    : /api/resident/monthly-statements/
+Auth   : resident
+
+Response 200:
+{
+  "count": 3,
+  "results": [
+    {
+      "id":              3,
+      "month":           "2026-05-01",
+      "month_label":     "May 2026",
+      "is_published":    true,
+      "total_collected": "85000.00",
+      "total_expenses":  "42000.00",
+      "closing_balance": "43000.00"
+    }
+  ]
+}
+
+Method : GET    /api/resident/monthly-statements/{id}/
+Response 200:   full statement detail with income, expenses breakdown
+
+Method : GET    /api/resident/monthly-statements/{id}/download-pdf/
+Response 200:   PDF file download
+Headers:        Content-Type: application/pdf
+                Content-Disposition: attachment; filename="statement_may_2026.pdf"
+
+Errors:
+  404 → { "detail": "Not found." }     ← also returned for unpublished statements
+
+
+================================================================================
+  SECTION 5 — ACCOUNTANT APIs
+  Auth: Bearer token with role = accountant (or society-admin, super-admin)
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+5.1  ACCOUNTANT DASHBOARD
+────────────────────────────────────────────────────────────────────────────────
+Method : GET
+URL    : /api/accountant/dashboard/
+Auth   : accountant
+
+Response 200:
+{
+  "success": true,
+  "data": {
+    "collected_this_month": "38000.00",
+    "outstanding":          "12000.00",
+    "defaulters":           3,
+    "overdue_count":        2,
+    "monthly_history": [
+      { "month": "2025-06", "collected": "32000.00", "outstanding": "8000.00" },
+      { "month": "2025-07", "collected": "35000.00", "outstanding": "5000.00" }
+      // ... 12 months total
+    ]
+  }
+}
+
+
+────────────────────────────────────────────────────────────────────────────────
+5.2  PAYMENT COLLECTION — DUES
+────────────────────────────────────────────────────────────────────────────────
+Method : GET
+URL    : /api/accountant/payment-collection/dues/
+Auth   : accountant
+Params : status (pending/paid/overdue), month (YYYY-MM), flat, page, page_size
+
+Response 200:
+{
+  "count": 19,
+  "results": [
+    {
+      "id":          25,
+      "flat":        "0d241424-4712-4be2-8a1c-984cd3c2297b",
+      "flat_number": "A-101",
+      "month":       "2025-12-01",
+      "month_label": "December 2025",
+      "amount":      "2500.00",
+      "due_date":    "2025-12-15",
+      "status":      "paid",
+      "paid_at":     "2025-12-10T09:00:00Z"
+    }
+  ]
+}
+
+Method : POST  /api/accountant/payment-collection/dues/
+Request Body:
+{
+  "flat":        "0d241424-4712-4be2-8a1c-984cd3c2297b",
+  "month":       "2026-06-01",
+  "amount":      3000,
+  "due_date":    "2026-06-10",
+  "description": "June 2026 maintenance"
+}
+
+Response 201: new due object
+
+Errors:
+  400 → { "non_field_errors": ["The fields flat, month must make a unique set."] }
+  400 → Attempting to edit or delete a paid due
+
+Method : GET    /api/accountant/payment-collection/dues/{id}/
+Method : PATCH  /api/accountant/payment-collection/dues/{id}/   (only if status=pending)
+Method : DELETE /api/accountant/payment-collection/dues/{id}/   (only if status=pending)
+Method : POST   /api/accountant/payment-collection/dues/{id}/mark-paid/
+
+MARK PAID Request Body:
+{
+  "payment_method": "upi",
+  "payment_date":   "2026-05-20",
+  "description":    "May payment via UPI"
+}
+
+payment_method values: "cash", "upi", "bank_transfer", "cheque", "online"
+
+Mark Paid Response 200:
+{
+  "success":    true,
+  "message":    "Due marked as paid.",
+  "payment_id": 9
+}
+
+
+────────────────────────────────────────────────────────────────────────────────
+5.3  PAYMENT COLLECTION — BULK GENERATE DUES
+────────────────────────────────────────────────────────────────────────────────
+Method : POST
+URL    : /api/accountant/payment-collection/dues/generate/
+Auth   : accountant
+
+Request Body:
+{
+  "month":      "2026-06-01",
+  "amount":     2500,
+  "due_date":   "2026-06-10",
+  "description": "June 2026 maintenance due"
+}
+
+Response 201:
+{
+  "success": true,
+  "message": "Dues generated for June 2026.",
+  "data": {
+    "created": 6,
+    "skipped": 0,
+    "total_flats": 6
+  }
+}
+
+Note: Idempotent — calling again skips already-existing dues.
+
+
+────────────────────────────────────────────────────────────────────────────────
+5.4  PAYMENT COLLECTION — PAYMENTS CRUD
+────────────────────────────────────────────────────────────────────────────────
+Method : GET    /api/accountant/payment-collection/payments/
+Params : payment_type, payment_method, flat, month, page
+
+Response 200:
+{
+  "count": 4,
+  "results": [
+    {
+      "id":             9,
+      "flat":           "0d241424-4712-4be2-8a1c-984cd3c2297b",
+      "flat_number":    "A-101",
+      "resident_name":  "Aarav Sharma",
+      "payment_type":   "maintenance",
+      "payment_method": "upi",
+      "amount":         "2500.00",
+      "payment_date":   "2025-12-10",
+      "status":         "approved"
+    }
+  ]
+}
+
+Method : POST  /api/accountant/payment-collection/payments/
+Request Body:
+{
+  "flat":           "0d241424-4712-4be2-8a1c-984cd3c2297b",
+  "resident":       27,
+  "payment_type":   "maintenance",
+  "payment_method": "cash",
+  "amount":         2000,
+  "payment_date":   "2026-05-01",
+  "description":    "Cash payment for May"
+}
+
+payment_type values: "maintenance", "penalty", "amenity", "parking", "other"
+
+Response 201: new payment object
+
+Method : GET    /api/accountant/payment-collection/payments/{id}/
+Method : PATCH  /api/accountant/payment-collection/payments/{id}/
+Method : DELETE /api/accountant/payment-collection/payments/{id}/
+
+
+────────────────────────────────────────────────────────────────────────────────
+5.5  PENDING DUES (Defaulters / Outstanding)
+────────────────────────────────────────────────────────────────────────────────
+Method : GET
+URL    : /api/accountant/track-payments/pending-dues/
+Auth   : accountant
+Params : status (overdue/pending), search (flat number), ordering (-amount, -due_date), page
+
+Response 200:
+{
+  "summary": {
+    "defaulters":     3,
+    "outstanding":    "12000.00",
+    "overdue_60_days": 1
+  },
+  "count": 8,
+  "results": [
+    {
+      "id":          26,
+      "flat_number": "A-102",
+      "resident":    "Kabir Mehta",
+      "amount":      "2500.00",
+      "due_date":    "2025-11-15",
+      "days_overdue": 185,
+      "status":      "overdue"
+    }
+  ]
+}
+
+Method : GET  /api/accountant/track-payments/pending-dues/summary/
+Response 200: { "success": true, "data": { "defaulters": 3, "outstanding": "12000.00", ... } }
+
+Method : POST  /api/accountant/track-payments/pending-dues/send-reminders/
+Request Body: { "flat_ids": [] }  or  {} to send to all defaulters
+Response 200:
+{
+  "success":    true,
+  "message":    "Reminders sent.",
+  "recipients": 3
+}
+
+
+────────────────────────────────────────────────────────────────────────────────
+5.6  TRACK PAYMENTS — APPROVED / ALL
+────────────────────────────────────────────────────────────────────────────────
+Method : GET
+URL    : /api/accountant/track-payments/
+Auth   : accountant
+Params : status (approved/pending/rejected), payment_method, search (flat), ordering, page
+
+Response 200:
+{
+  "count": 4,
+  "results": [
+    {
+      "id":             9,
+      "flat_number":    "A-101",
+      "resident_name":  "Aarav Sharma",
+      "amount":         "2500.00",
+      "payment_method": "upi",
+      "payment_date":   "2025-12-10",
+      "status":         "approved",
+      "receipt_number": "RCP-001"
+    }
+  ]
+}
+
+Method : GET  /api/accountant/track-payments/summary/
+Response 200: { "success": true, "data": { "total_collected": "38000.00", ... } }
+
+Method : GET  /api/accountant/track-payments/export/
+Response 200:
+  Content-Type: text/csv
+  Content-Disposition: attachment; filename="payments.csv"
+
+Method : GET  /api/accountant/track-payments/{id}/
+Response 200: single payment detail
+
+
+────────────────────────────────────────────────────────────────────────────────
+5.7  FUND DASHBOARD
+────────────────────────────────────────────────────────────────────────────────
+Method : GET
+URL    : /api/accountant/fund-dashboard/
+Auth   : accountant
+Params : months=12 (1–24)
+
+Response 200:
+{
+  "success": true,
+  "data": {
+    "kpi": {
+      "total_collected":    "38000.00",
+      "total_expenses_used": "15000.00",
+      "remaining_balance":  "23000.00",
+      "pending_dues":       "12000.00",
+      "usage_pct":          39.47
+    },
+    "latest_expenses": [
+      {
+        "id":       1,
+        "title":    "Water pump repair",
+        "amount":   "15000.00",
+        "category": "repairs",
+        "date":     "2026-04-10"
+      }
+    ],
+    "monthly_trend": [
+      { "month": "2025-06", "collected": "32000.00", "expenses": "10000.00" }
+    ]
+  }
+}
+
+
+────────────────────────────────────────────────────────────────────────────────
+5.8  MAINTENANCE EXPENSES — FULL CRUD + PUBLISH
+────────────────────────────────────────────────────────────────────────────────
+Method : GET    /api/accountant/maintenance-expenses/
+Params : is_published (true/false), category, search, ordering, page
+
+Response 200:
+{
+  "count": 7,
+  "results": [
+    {
+      "id":             1,
+      "title":          "Water pump repair",
+      "category":       "repairs",
+      "amount":         "15000.00",
+      "is_published":   true,
+      "status_display": "Published",
+      "expense_date":   "2026-04-10"
+    }
+  ]
+}
+
+Method : GET  /api/accountant/maintenance-expenses/summary/
+Response 200:
+{
+  "success": true,
+  "data": {
+    "total_expenses":    "85000.00",
+    "published_expenses": "70000.00",
+    "draft_expenses":    "15000.00",
+    "by_category": [
+      { "category": "repairs", "total": "35000.00" }
+    ]
+  }
+}
+
+Method : POST  /api/accountant/maintenance-expenses/
+Request Body:
+{
+  "title":       "Generator fuel refill",
+  "category":    "utilities",
+  "amount":      8000,
+  "expense_date": "2026-05-20",
+  "description": "Monthly diesel for backup generator",
+  "is_published": false
+}
+
+category values: "repairs", "cleaning", "security", "utilities", "staff", "amenities", "other"
+
+Response 201:
+{
+  "id":             8,
+  "title":          "Generator fuel refill",
+  "category":       "utilities",
+  "amount":         "8000.00",
+  "is_published":   false,
+  "status_display": "Draft",
+  "expense_date":   "2026-05-20"
+}
+
+Method : GET    /api/accountant/maintenance-expenses/{id}/
+Method : PATCH  /api/accountant/maintenance-expenses/{id}/
+Method : DELETE /api/accountant/maintenance-expenses/{id}/
+
+Method : POST  /api/accountant/maintenance-expenses/{id}/publish/
+Response 200:
+{
+  "success":        true,
+  "message":        "Expense published.",
+  "is_published":   true,
+  "status_display": "Published"
+}
+
+Method : POST  /api/accountant/maintenance-expenses/{id}/unpublish/
+Response 200: { "success": true, "message": "Expense moved to draft.", "is_published": false }
+
+
+────────────────────────────────────────────────────────────────────────────────
+5.9  MONTHLY STATEMENTS — GENERATE + CRUD + PUBLISH
+────────────────────────────────────────────────────────────────────────────────
+Method : GET
+URL    : /api/accountant/monthly-statements/
+Params : is_published, year, month, page
+
+Response 200:
+{
+  "count": 4,
+  "results": [
+    {
+      "id":              5,
+      "month":           "2026-03-01",
+      "month_label":     "March 2026",
+      "title":           "March 2026 Maintenance Statement",
+      "opening_balance": "5000.00",
+      "total_collected": "0.00",
+      "total_expenses":  "0.00",
+      "closing_balance": "5000.00",
+      "is_published":    false
+    }
+  ]
+}
+
+Method : POST  /api/accountant/monthly-statements/generate/
+Request Body:
+{
+  "year":            2026,
+  "month":           6,
+  "opening_balance": 5000,
+  "notes":           "June 2026 statement"
+}
+
+Response 201 (new):     { "success": true, "message": "Statement generated.", "data": { ... } }
+Response 200 (existing): { "success": true, "message": "Statement regenerated for June 2026.", "data": { ... } }
+
+Method : GET  /api/accountant/monthly-statements/{id}/
+Method : PATCH /api/accountant/monthly-statements/{id}/
+
+Method : POST  /api/accountant/monthly-statements/{id}/publish/
+Response 200: { "success": true, "message": "Statement published.", "data": { "is_published": true, ... } }
+
+Method : POST  /api/accountant/monthly-statements/{id}/unpublish/
+Response 200: { "success": true, "message": "Statement unpublished.", "data": { "is_published": false, ... } }
+
+Method : GET   /api/accountant/monthly-statements/{id}/download-pdf/
+Response 200:  PDF file
+Content-Type:  application/pdf
+
+Method : GET   /api/accountant/monthly-statements/{id}/export-excel/
+Response 200:  Excel file
+Content-Type:  application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+Content-Disp:  attachment; filename="statement_march_2026.xlsx"
+
+Errors:
+  400 → { "success": false, "message": "Already published." }   ← on publish if already published
+  404 → { "detail": "Not found." }
+
+
+────────────────────────────────────────────────────────────────────────────────
+5.10 GENERATE RECEIPTS — LIST + DOWNLOAD
+────────────────────────────────────────────────────────────────────────────────
+Method : GET
+URL    : /api/accountant/generate-receipts/
+Auth   : accountant
+Params : payment_type, month (YYYY-MM), search (resident name), page
+
+Response 200:
+{
+  "count": 4,
+  "results": [
+    {
+      "id":             1,
+      "receipt_number": "RCP-001",
+      "resident_name":  "Aarav Sharma",
+      "flat_number":    "A-101",
+      "amount":         "2500.00",
+      "payment_type":   "maintenance",
+      "payment_date":   "2025-12-10"
+    }
+  ]
+}
+
+Method : GET  /api/accountant/generate-receipts/{id}/
+Response 200:
+{
+  "id":             1,
+  "receipt_number": "RCP-001",
+  "resident_name":  "Aarav Sharma",
+  "flat_number":    "A-101",
+  "society_name":   "Greenwood Heights",
+  "amount":         "2500.00",
+  "payment_type":   "maintenance",
+  "payment_date":   "2025-12-10",
+  "payment_method": "upi"
+}
+
+Method : GET  /api/accountant/generate-receipts/{id}/pdf/
+Response 200:  Single receipt PDF (A5 format)
+Content-Type:  application/pdf
+
+Method : GET  /api/accountant/generate-receipts/bulk-pdf/
+Params : month (YYYY-MM), payment_type
+Response 200:  Bulk PDF with all receipts
+Content-Type:  application/pdf
+
+Method : GET  /api/accountant/generate-receipts/bulk-csv/
+Params : month (YYYY-MM), payment_type
+Response 200:  CSV file
+Content-Type:  text/csv
+
+
+────────────────────────────────────────────────────────────────────────────────
+5.11 PAYMENT REPORTS — ANALYTICS + PDF
+────────────────────────────────────────────────────────────────────────────────
+Method : GET
+URL    : /api/accountant/payment-reports/
+Auth   : accountant
+Params : months (1–24), year (YYYY), payment_type, payment_method
+
+Response 200:
+{
+  "success": true,
+  "data": {
+    "total_payments": 4,
+    "total_amount":   12500.0,
+    "by_method": {
+      "upi":  { "count": 2, "amount": "7500.00" },
+      "cash": { "count": 2, "amount": "5000.00" }
+    },
+    "by_type": {
+      "maintenance": { "count": 4, "amount": "12500.00" }
+    },
+    "monthly_trend": [
+      { "month": "2025-12", "count": 2, "amount": "5000.00" },
+      { "month": "2026-05", "count": 2, "amount": "7500.00" }
+    ]
+  }
+}
+
+Method : GET  /api/accountant/payment-reports/download-pdf/
+Params : same as above
+Response 200:  Analytics report PDF (A4)
+Content-Type:  application/pdf
+
+
+────────────────────────────────────────────────────────────────────────────────
+5.12 EXPORT REPORTS — CSV / PDF / TALLY XML
+────────────────────────────────────────────────────────────────────────────────
+Auth   : accountant
+
+PAYMENTS EXPORT
+  GET /api/accountant/export-reports/payments/              → CSV
+  GET /api/accountant/export-reports/payments/pdf/          → PDF
+  GET /api/accountant/export-reports/payments/tally/        → TallyPrime XML
+  Params: month (YYYY-MM), payment_type, payment_method
+
+DUES EXPORT
+  GET /api/accountant/export-reports/dues/                  → CSV
+  GET /api/accountant/export-reports/dues/pdf/              → PDF
+  Params: status (pending/paid/overdue), month (YYYY-MM)
+
+EXPENSES EXPORT
+  GET /api/accountant/export-reports/expenses/              → CSV
+  GET /api/accountant/export-reports/expenses/pdf/          → PDF
+  Params: is_published (true/false), category
+
+STATEMENTS EXPORT
+  GET /api/accountant/export-reports/statements/            → CSV
+  GET /api/accountant/export-reports/statements/pdf/        → PDF
+  Params: year (YYYY), is_published (true/false)
+
+Response (CSV):
+  Content-Type: text/csv
+  Content-Disposition: attachment; filename="payments_export.csv"
+
+Response (PDF):
+  Content-Type: application/pdf
+  Content-Disposition: attachment; filename="payments_export.pdf"
+
+Response (Tally XML):
+  Content-Type: application/xml
+  Content-Disposition: attachment; filename="payments_tally.xml"
+
+Tally XML sample (compatible with TallyPrime import):
+  <?xml version="1.0" encoding="UTF-8"?>
+  <ENVELOPE>
+    <HEADER><TALLYREQUEST>Import Data</TALLYREQUEST></HEADER>
+    <BODY>
+      <IMPORTDATA>
+        <REQUESTDESC><REPORTNAME>Vouchers</REPORTNAME></REQUESTDESC>
+        <REQUESTDATA>
+          <TALLYMESSAGE>
+            <VOUCHER VCHTYPE="Receipt" ACTION="Create">
+              <DATE>20261201</DATE>
+              <NARRATION>Maintenance - A-101</NARRATION>
+              <ALLLEDGERENTRIES.LIST>
+                <LEDGERNAME>Bank/Cash</LEDGERNAME>
+                <ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
+                <AMOUNT>-2500.00</AMOUNT>
+              </ALLLEDGERENTRIES.LIST>
+              <ALLLEDGERENTRIES.LIST>
+                <LEDGERNAME>Aarav Sharma</LEDGERNAME>
+                <ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
+                <AMOUNT>2500.00</AMOUNT>
+              </ALLLEDGERENTRIES.LIST>
+            </VOUCHER>
+          </TALLYMESSAGE>
+        </REQUESTDATA>
+      </IMPORTDATA>
+    </BODY>
+  </ENVELOPE>
+
+
+================================================================================
+  ADDITIONS — MISSING PLATFORM ADMIN ENDPOINTS
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+2.2b SOCIETIES — TOGGLE STATUS
+────────────────────────────────────────────────────────────────────────────────
+Method : PATCH
+URL    : /api/platform-admin/create-society/societies/{id}/toggle-status/
+Auth   : super-admin
+
+No Request Body required. Flips current status: active → inactive → active.
+
+Response 200:
+{
+  "id":     11,
+  "name":   "Greenwood Heights",
+  "status": "inactive"
+}
+
+
+────────────────────────────────────────────────────────────────────────────────
+2.7b GLOBAL REPORTS — COMPLETE REFERENCE
+────────────────────────────────────────────────────────────────────────────────
+Auth   : super-admin
+Base   : /api/platform-admin/global-reports/
+
+OVERVIEW
+  Method : GET
+  URL    : /api/platform-admin/global-reports/overview/
+  Response 200:
+  {
+    "success": true,
+    "data": {
+      "total_societies":  20,
+      "active_societies": 17,
+      "total_users":      120,
+      "total_revenue":    "900000.00",
+      "open_complaints":  35
+    }
+  }
+
+SOCIETY GROWTH
+  Method : GET
+  URL    : /api/platform-admin/global-reports/society-growth/
+  Params : months=12 (default), year=YYYY
+  Response 200:
+  {
+    "success": true,
+    "data": {
+      "monthly_new_societies": [
+        { "month": "2026-01", "count": 2 },
+        { "month": "2026-02", "count": 1 }
+      ],
+      "total_growth_pct": 15.0
+    }
+  }
+
+USER GROWTH
+  Method : GET
+  URL    : /api/platform-admin/global-reports/user-growth/
+  Params : months=12
+  Response 200:
+  {
+    "success": true,
+    "data": {
+      "monthly_new_users": [
+        { "month": "2026-01", "count": 45 },
+        { "month": "2026-02", "count": 30 }
+      ]
+    }
+  }
+
+REVENUE
+  Method : GET
+  URL    : /api/platform-admin/global-reports/revenue/
+  Params : year=YYYY, months=12
+  Response 200:
+  {
+    "success": true,
+    "data": {
+      "total_revenue":   "900000.00",
+      "monthly_revenue": [
+        { "month": "2026-01", "amount": "75000.00" }
+      ]
+    }
+  }
+
+COMPLAINTS
+  Method : GET
+  URL    : /api/platform-admin/global-reports/complaints/
+  Response 200:
+  {
+    "success": true,
+    "data": {
+      "open":        35,
+      "resolved":    120,
+      "avg_resolution_days": 3.2
+    }
+  }
+
+VISITORS
+  Method : GET
+  URL    : /api/platform-admin/global-reports/visitors/
+  Response 200:
+  {
+    "success": true,
+    "data": {
+      "total_visits_this_month": 450,
+      "approved": 420,
+      "rejected": 30
+    }
+  }
+
+
+────────────────────────────────────────────────────────────────────────────────
+2.8b AUDIT LOGS — EXPORT
+────────────────────────────────────────────────────────────────────────────────
+Method : GET
+URL    : /api/platform-admin/audit-logs/export/
+Auth   : super-admin
+Response 200: CSV file
+Content-Type: text/csv
+Content-Disposition: attachment; filename="audit_logs.csv"
+
+
+================================================================================
+  ADDITIONS — MISSING SOCIETY ADMIN ENDPOINTS
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+3.6b RESIDENTS — ACTIONS (approve / reject / deactivate / reactivate)
+────────────────────────────────────────────────────────────────────────────────
+Auth   : society-admin
+Base   : /api/society-admin/residents/
+
+GET  /api/society-admin/residents/{id}/           — Resident detail
+POST /api/society-admin/residents/{id}/approve/   — Approve pending resident → active
+POST /api/society-admin/residents/{id}/reject/    — Reject pending resident → inactive
+POST /api/society-admin/residents/{id}/deactivate/ — Deactivate active resident
+POST /api/society-admin/residents/{id}/reactivate/ — Reactivate deactivated resident
+GET  /api/society-admin/residents/pending/         — Pending approvals only
+GET  /api/society-admin/residents/dashboard/       — KPI summary (total/pending/active counts)
+
+APPROVE Response 200:
+{
+  "success": true,
+  "message": "Resident approved.",
+  "data": {
+    "id":     "31",
+    "status": "active"
+  }
+}
+
+REJECT/DEACTIVATE/REACTIVATE follow the same shape.
+
+PENDING LIST Response 200:
+{
+  "count": 3,
+  "results": [
+    {
+      "id":          "31",
+      "full_name":   "Rohan Mehta",
+      "mobile":      "9876543210",
+      "flat_number": "B-202",
+      "created_at":  "2026-05-23T10:00:00Z"
+    }
+  ]
+}
+
+DASHBOARD Response 200:
+{
+  "success": true,
+  "data": {
+    "total_residents":   22,
+    "active_residents":  18,
+    "pending_approvals":  3,
+    "inactive_residents": 1
+  }
+}
+
+
+────────────────────────────────────────────────────────────────────────────────
+3.14 VISITORS (Society Admin — full management)
+────────────────────────────────────────────────────────────────────────────────
+Auth   : society-admin
+Base   : /api/society-admin/visitors/
+
+GET  /api/society-admin/visitors/dashboard/     — KPI summary
+GET  /api/society-admin/visitors/               — Paginated visitor list
+POST /api/society-admin/visitors/               — Create visitor entry
+GET  /api/society-admin/visitors/{id}/          — Visitor detail
+PATCH /api/society-admin/visitors/{id}/         — Update entry
+DELETE /api/society-admin/visitors/{id}/        — Delete entry
+
+Params: status (pending/approved/denied/exited), flat, search, page
+
+DASHBOARD Response 200:
+{
+  "success": true,
+  "data": {
+    "today_visitors":    12,
+    "pending_approvals":  3,
+    "currently_inside":   5,
+    "total_this_month":  87
+  }
+}
+
+LIST Response 200:
+{
+  "count": 87,
+  "results": [
+    {
+      "id":           1,
+      "visitor_name": "Amit Patel",
+      "purpose":      "personal",
+      "flat_number":  "A-101",
+      "entry_time":   "2026-05-23T10:00:00Z",
+      "exit_time":    null,
+      "status":       "inside"
+    }
+  ]
+}
+
+POST Request Body:
+{
+  "visitor_name": "Amit Patel",
+  "mobile":       "9700000001",
+  "purpose":      "personal",
+  "flat":         "0d241424-4712-4be2-8a1c-984cd3c2297b",
+  "expected_date": "2026-05-25"
+}
+
+purpose values: "personal", "delivery", "service", "official", "other"
+
+
+────────────────────────────────────────────────────────────────────────────────
+3.15 SECURITY — GATES, ALERTS + DASHBOARD
+────────────────────────────────────────────────────────────────────────────────
+Auth   : society-admin
+Base   : /api/society-admin/security/
+
+DASHBOARD
+  GET  /api/society-admin/security/dashboard/
+  Response 200:
+  {
+    "success": true,
+    "data": {
+      "active_gates":    2,
+      "open_alerts":     1,
+      "entries_today":  25,
+      "exits_today":    22
+    }
+  }
+
+GATES (CRUD)
+  GET    /api/society-admin/security/gates/
+  POST   /api/society-admin/security/gates/
+  GET    /api/society-admin/security/gates/{id}/
+  PATCH  /api/society-admin/security/gates/{id}/
+  DELETE /api/society-admin/security/gates/{id}/
+
+  POST Request Body:
+  {
+    "name":       "Main Entrance",
+    "gate_type":  "entry_exit",
+    "is_active":  true
+  }
+
+  gate_type values: "entry_only", "exit_only", "entry_exit"
+
+  Response 201:
+  {
+    "id":        1,
+    "name":      "Main Entrance",
+    "gate_type": "entry_exit",
+    "is_active": true
+  }
+
+ALERTS (CRUD)
+  GET    /api/society-admin/security/alerts/
+  POST   /api/society-admin/security/alerts/
+  GET    /api/society-admin/security/alerts/{id}/
+  PATCH  /api/society-admin/security/alerts/{id}/
+  DELETE /api/society-admin/security/alerts/{id}/
+
+  POST Request Body:
+  {
+    "title":       "Suspicious activity near Gate 2",
+    "description": "Unknown vehicle parked since 2 hours.",
+    "severity":    "medium"
+  }
+
+  severity values: "low", "medium", "high", "critical"
+
+
+────────────────────────────────────────────────────────────────────────────────
+3.16 NOTIFICATIONS (Society Admin — send & manage)
+────────────────────────────────────────────────────────────────────────────────
+Auth   : society-admin
+Base   : /api/society-admin/notifications/
+
+GET  /api/society-admin/notifications/stats/     — Delivery stats
+GET  /api/society-admin/notifications/           — List sent notifications
+POST /api/society-admin/notifications/           — Send notification
+GET  /api/society-admin/notifications/{id}/      — Detail
+PATCH /api/society-admin/notifications/{id}/     — Update
+DELETE /api/society-admin/notifications/{id}/    — Delete
+
+STATS Response 200:
+{
+  "success": true,
+  "data": {
+    "sent_today":      5,
+    "total_sent":     120,
+    "read_rate_pct":   72.5
+  }
+}
+
+POST Request Body:
+{
+  "title":     "Water cut tomorrow",
+  "message":   "Water supply will be interrupted on 24 May from 9am to 1pm.",
+  "target":    "all",
+  "send_push": true,
+  "send_sms":  false
+}
+
+target values: "all", "flat:<uuid>", "building:<uuid>"
+
+Response 201:
+{
+  "id":         55,
+  "title":      "Water cut tomorrow",
+  "target":     "all",
+  "sent_at":    "2026-05-23T10:00:00Z",
+  "recipients": 22
+}
+
+
+────────────────────────────────────────────────────────────────────────────────
+3.17 COMPLAINTS — ACTIONS (Society Admin)
+────────────────────────────────────────────────────────────────────────────────
+Auth   : society-admin
+Base   : /api/society-admin/complaints/
+
+GET  /api/society-admin/complaints/stats/        — KPI (open/in_progress/resolved_30d)
+POST /api/society-admin/complaints/{id}/assign/  — Assign to staff member
+POST /api/society-admin/complaints/{id}/in-progress/ — Move to In Progress
+POST /api/society-admin/complaints/{id}/resolve/ — Resolve with notes
+POST /api/society-admin/complaints/{id}/close/   — Close complaint
+
+STATS Response 200:
+{
+  "success": true,
+  "data": {
+    "open":          5,
+    "in_progress":   3,
+    "resolved_30d":  12,
+    "avg_resolution_hours": 48
+  }
+}
+
+ASSIGN Request Body:
+{
+  "assigned_to": 35        ← user_profile id of staff member
+}
+
+RESOLVE Request Body:
+{
+  "resolution_notes": "Water pipe was repaired by contractor on 22 May."
+}
+
+Response 200 (all actions): { "success": true, "message": "Complaint updated." }
+
+
+────────────────────────────────────────────────────────────────────────────────
+3.18 NOTICE BOARD — DASHBOARD
+────────────────────────────────────────────────────────────────────────────────
+Method : GET
+URL    : /api/society-admin/notice-board/dashboard/
+Auth   : society-admin
+
+Response 200:
+{
+  "success": true,
+  "data": {
+    "total_notices":    15,
+    "active_notices":   8,
+    "urgent_notices":   2,
+    "published_today":  1
+  }
+}
+
+
+────────────────────────────────────────────────────────────────────────────────
+3.19 STAFF & GUARDS — CRUD
+────────────────────────────────────────────────────────────────────────────────
+Method : GET    /api/society-admin/staff-guards/
+Method : POST   /api/society-admin/staff-guards/
+Method : GET    /api/society-admin/staff-guards/{id}/
+Method : PATCH  /api/society-admin/staff-guards/{id}/
+Method : DELETE /api/society-admin/staff-guards/{id}/
+Auth   : society-admin
+Params : role, status, search, page
+
+POST Request Body:
+{
+  "full_name":  "Rajan Singh",
+  "mobile":     "9500000001",
+  "email":      "rajan@greenwood.in",
+  "role_id":    6,
+  "shift":      "morning",
+  "is_active":  true
+}
+
+shift values: "morning", "afternoon", "night", "rotating"
+
+Response 200 (list):
+{
+  "count": 5,
+  "results": [
+    {
+      "id":        "36",
+      "full_name": "Rajan Singh",
+      "mobile":    "9500000001",
+      "role":      { "id": 6, "name": "Security Guard", "slug": "security-guard" },
+      "shift":     "morning",
+      "is_active": true
+    }
+  ]
+}
+
+
+────────────────────────────────────────────────────────────────────────────────
+3.20 VENDORS — CRUD
+────────────────────────────────────────────────────────────────────────────────
+Method : GET    /api/society-admin/vendors/
+Method : POST   /api/society-admin/vendors/
+Method : GET    /api/society-admin/vendors/{id}/
+Method : PATCH  /api/society-admin/vendors/{id}/
+Method : DELETE /api/society-admin/vendors/{id}/
+Auth   : society-admin
+Params : category, search, page
+
+POST Request Body:
+{
+  "name":         "RK Plumbing Works",
+  "category":     "plumbing",
+  "contact_name": "Ramesh Kumar",
+  "mobile":       "9800000001",
+  "email":        "rk@plumbing.in",
+  "address":      "12 Industrial Area, Bangalore",
+  "is_active":    true
+}
+
+category values: "plumbing", "electrical", "cleaning", "security", "it", "other"
+
+Response 200 (list):
+{
+  "count": 3,
+  "results": [
+    {
+      "id":       1,
+      "name":     "RK Plumbing Works",
+      "category": "plumbing",
+      "mobile":   "9800000001",
+      "is_active": true
+    }
+  ]
+}
+
+
+────────────────────────────────────────────────────────────────────────────────
+3.21 FUND DASHBOARD (Society Admin)
+────────────────────────────────────────────────────────────────────────────────
+Method : GET
+URL    : /api/society-admin/fund-dashboard/
+Auth   : society-admin
+
+Response 200:
+{
+  "success": true,
+  "data": {
+    "total_collected":  "125000.00",
+    "total_expenses":    "45000.00",
+    "remaining_balance": "80000.00",
+    "pending_dues":      "18000.00",
+    "recent_expenses": [
+      { "title": "Water pump repair", "amount": "15000.00", "date": "2026-04-10" }
+    ]
+  }
+}
+
+
+────────────────────────────────────────────────────────────────────────────────
+3.22 PAYMENTS OVERVIEW (Society Admin)
+────────────────────────────────────────────────────────────────────────────────
+Method : GET
+URL    : /api/society-admin/payments/overview/
+Auth   : society-admin
+
+Response 200:
+{
+  "success": true,
+  "data": {
+    "collected_this_month": "38000.00",
+    "pending_this_month":   "12000.00",
+    "defaulters":            3,
+    "collection_rate_pct":  76.0
+  }
+}
+
+
+────────────────────────────────────────────────────────────────────────────────
+3.23 AUDIT LOGS (Society Admin)
+────────────────────────────────────────────────────────────────────────────────
+Method : GET
+URL    : /api/society-admin/audit-logs/
+Auth   : society-admin
+Params : page, page_size
+
+Response 200:
+{
+  "count": 80,
+  "results": [
+    {
+      "id":        1,
+      "action":    "APPROVE_RESIDENT",
+      "actor":     "Priya Sharma",
+      "target":    "Rohan Mehta",
+      "timestamp": "2026-05-23T10:30:00Z"
+    }
+  ]
+}
+
+Method : GET  /api/society-admin/audit-logs/export/
+Response 200: CSV file
+
+
+────────────────────────────────────────────────────────────────────────────────
+3.24 ROLES & ACCESS — DASHBOARD + AVAILABLE MODULES + USERS
+────────────────────────────────────────────────────────────────────────────────
+Auth   : society-admin
+Base   : /api/society-admin/roles-access/
+
+GET  /api/society-admin/roles-access/dashboard/           — KPI
+GET  /api/society-admin/roles-access/available-modules/   — All modules list
+GET  /api/society-admin/roles-access/users/               — Scoped users list
+GET  /api/society-admin/roles-access/users/{id}/          — User detail
+PATCH /api/society-admin/roles-access/users/{id}/         — Update user
+
+DASHBOARD Response 200:
+{
+  "success": true,
+  "data": {
+    "total_roles": 5,
+    "total_users": 8,
+    "active_users": 6
+  }
+}
+
+AVAILABLE MODULES Response 200:
+{
+  "success": true,
+  "data": [
+    {
+      "module":    "manage_residents",
+      "label":     "Manage Residents",
+      "role_type": "operational"
+    }
+  ]
+}
+
+POST /api/society-admin/roles-access/{id}/toggle-active/
+Response 200: { "success": true, "is_active": false }
+
+
+================================================================================
+  ADDITIONS — MISSING RESIDENT ENDPOINTS
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+4.5b PAYMENTS — SUMMARY + DUES + HISTORY
+────────────────────────────────────────────────────────────────────────────────
+Auth   : resident
+Base   : /api/resident/payments/
+
+SUMMARY
+  GET  /api/resident/payments/summary/
+  Params: flat=<uuid>
+  Response 200:
+  {
+    "success": true,
+    "data": {
+      "total_paid":     "30000.00",
+      "pending_dues":    2,
+      "overdue_amount": "5000.00",
+      "last_paid_date": "2026-05-10"
+    }
+  }
+
+DUES (resident's maintenance dues)
+  GET    /api/resident/payments/dues/
+  GET    /api/resident/payments/dues/{id}/
+  POST   /api/resident/payments/dues/{id}/mark-paid/
+  Params: status (pending/paid/overdue), page
+
+  LIST Response 200:
+  {
+    "count": 3,
+    "results": [
+      {
+        "id":         10,
+        "month":      "2026-05-01",
+        "month_label": "May 2026",
+        "amount":     "2500.00",
+        "status":     "pending",
+        "due_date":   "2026-05-15"
+      }
+    ]
+  }
+
+  MARK PAID Request Body:
+  {
+    "payment_method": "upi",
+    "payment_date":   "2026-05-20",
+    "transaction_id": "UPI1234567"
+  }
+
+PAYMENT HISTORY
+  GET  /api/resident/payments/history/
+  GET  /api/resident/payments/history/{id}/
+  Params: payment_type, month, page
+
+  LIST Response 200:
+  {
+    "count": 5,
+    "results": [
+      {
+        "id":             9,
+        "payment_type":   "maintenance",
+        "payment_method": "upi",
+        "amount":         "2500.00",
+        "payment_date":   "2026-04-10",
+        "status":         "approved",
+        "receipt_number": "RCP-001"
+      }
+    ]
+  }
+
+
+────────────────────────────────────────────────────────────────────────────────
+4.11b SOS ALERTS — FULL REFERENCE
+────────────────────────────────────────────────────────────────────────────────
+Auth   : resident (trigger/list) | society-admin (resolve/active)
+Base   : /api/resident/sos/
+
+TRIGGER SOS
+  POST /api/resident/sos/
+  Request Body:
+  {
+    "alert_type":  "fire",
+    "description": "Smoke detected in corridor near A-101",
+    "location":    "Tower A, Floor 1"
+  }
+  alert_type values: "fire", "medical", "theft", "flood", "other"
+
+  Response 201:
+  {
+    "id":         10,
+    "alert_type": "fire",
+    "status":     "active",
+    "created_at": "2026-05-23T10:00:00Z"
+  }
+
+LIST MY ALERTS
+  GET /api/resident/sos/
+  Response 200: paginated list of alerts raised by this resident.
+
+ALERT DETAIL
+  GET /api/resident/sos/{id}/
+  Response 200:
+  {
+    "id":          10,
+    "alert_type":  "fire",
+    "description": "Smoke detected in corridor near A-101",
+    "status":      "active",
+    "created_at":  "2026-05-23T10:00:00Z",
+    "resolved_at": null,
+    "resolved_by": null
+  }
+
+ACTIVE ALERTS (Society Admin / Guard view)
+  GET /api/resident/sos/active/
+  Response 200: list of all active (unresolved) SOS alerts for the society.
+
+RESOLVE
+  POST /api/resident/sos/{id}/resolve/
+  Auth : society-admin or security-guard
+  Request Body: { "notes": "Fire brigade arrived, situation contained." }
+  Response 200: { "success": true, "message": "SOS alert resolved." }
+
+
+────────────────────────────────────────────────────────────────────────────────
+4.10b VISITORS — PASSES + APPROVALS + DELIVERIES + HISTORY
+────────────────────────────────────────────────────────────────────────────────
+Auth   : resident
+Base   : /api/resident/visitors/
+
+GUEST PASSES
+  GET    /api/resident/visitors/passes/
+  POST   /api/resident/visitors/passes/
+  GET    /api/resident/visitors/passes/{id}/
+  PATCH  /api/resident/visitors/passes/{id}/
+  DELETE /api/resident/visitors/passes/{id}/
+  POST   /api/resident/visitors/passes/{id}/cancel/
+
+  POST Request Body:
+  {
+    "visitor_name":  "Kavya Reddy",
+    "mobile":        "9700000001",
+    "valid_from":    "2026-05-25",
+    "valid_until":   "2026-05-26",
+    "purpose":       "personal",
+    "max_entries":   1
+  }
+
+  Response 201:
+  {
+    "id":         5,
+    "pass_code":  "MG-PASS-9XK2",
+    "visitor_name": "Kavya Reddy",
+    "valid_from": "2026-05-25",
+    "valid_until": "2026-05-26",
+    "status":     "active"
+  }
+
+  CANCEL Response 200: { "success": true, "message": "Pass cancelled." }
+
+VISITOR APPROVALS (pending pre-approvals for this flat)
+  GET /api/resident/visitors/approvals/
+  Response 200: list of pending visitor approval requests for resident's flat.
+
+DELIVERY APPROVALS
+  GET /api/resident/visitors/deliveries/
+  Response 200: list of pending delivery OTP requests (food, courier, etc.).
+
+ENTRY/EXIT HISTORY
+  GET /api/resident/visitors/history/
+  Params: date_from, date_to, page
+  Response 200:
+  {
+    "count": 12,
+    "results": [
+      {
+        "id":           1,
+        "visitor_name": "Amit Patel",
+        "entry_time":   "2026-05-23T10:00:00Z",
+        "exit_time":    "2026-05-23T11:30:00Z",
+        "purpose":      "personal"
+      }
+    ]
+  }
+
+
+────────────────────────────────────────────────────────────────────────────────
+4.4b NOTICES — MARK READ + FUNDRAISER CONTRIBUTE
+────────────────────────────────────────────────────────────────────────────────
+Auth   : resident
+Base   : /api/resident/notices/
+
+MARK AS READ
+  POST /api/resident/notices/{id}/mark-read/
+  No request body needed.
+  Response 200: { "success": true, "message": "Notice marked as read." }
+
+FUNDRAISER CONTRIBUTION
+  POST /api/resident/notices/{id}/contribute/
+  Note: Only valid for notices of type "fundraiser".
+  Request Body:
+  {
+    "amount":         500,
+    "payment_method": "upi"
+  }
+  Response 200:
+  {
+    "success": true,
+    "message": "Contribution recorded. Thank you!",
+    "data": {
+      "notice_id":       12,
+      "amount":          "500.00",
+      "total_collected": "12500.00"
+    }
+  }
+
+
+────────────────────────────────────────────────────────────────────────────────
+4.3b COMPLAINTS — RESOLVE + CLOSE (Resident actions)
+────────────────────────────────────────────────────────────────────────────────
+Auth   : resident
+Base   : /api/resident/complaints/
+
+POST /api/resident/complaints/{id}/resolve/
+Body : { "resolution_note": "Issue fixed by maintenance team." }
+Response 200: { "success": true, "message": "Complaint marked resolved." }
+
+POST /api/resident/complaints/{id}/close/
+No body required.
+Response 200: { "success": true, "message": "Complaint closed." }
+
+
+================================================================================
+  ADDITIONS — MISSING ACCOUNTANT ENDPOINTS
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+5.13 EXPENSE TRACKING
+────────────────────────────────────────────────────────────────────────────────
+Method : GET    /api/accountant/expense-tracking/
+Method : POST   /api/accountant/expense-tracking/
+Method : GET    /api/accountant/expense-tracking/summary/
+Method : GET    /api/accountant/expense-tracking/{id}/
+Method : PATCH  /api/accountant/expense-tracking/{id}/
+Method : DELETE /api/accountant/expense-tracking/{id}/
+Method : POST   /api/accountant/expense-tracking/{id}/publish/
+Method : POST   /api/accountant/expense-tracking/{id}/unpublish/
+Auth   : accountant
+
+Note: This is a simpler expense log (distinct from maintenance-expenses which
+      has vendor/proof fields). Use for petty cash and minor recurring costs.
+
+Params (list): category, is_published, search, year, month, ordering, page
+
+POST Request Body:
+{
+  "title":       "Security guard overtime",
+  "category":    "staff",
+  "amount":      3500,
+  "expense_date": "2026-05-20",
+  "description": "Overtime for festival duty",
+  "is_published": false
+}
+
+Response 201:
+{
+  "id":           12,
+  "title":        "Security guard overtime",
+  "category":     "staff",
+  "amount":       "3500.00",
+  "is_published": false,
+  "expense_date": "2026-05-20"
+}
+
+SUMMARY Response 200:
+{
+  "success": true,
+  "data": {
+    "total_amount":      "85000.00",
+    "published_amount":  "70000.00",
+    "by_category": [
+      { "category": "staff",    "total": "30000.00" },
+      { "category": "repairs",  "total": "25000.00" }
+    ]
+  }
+}
+
+PUBLISH Response 200: { "success": true, "message": "Expense published.", "is_published": true }
+UNPUBLISH Response 200: { "success": true, "message": "Expense moved to draft.", "is_published": false }
+
+
+────────────────────────────────────────────────────────────────────────────────
+5.14 FINANCIAL REPORTS
+────────────────────────────────────────────────────────────────────────────────
+Method : GET
+URL    : /api/accountant/financial-reports/
+Auth   : accountant
+Params : year=YYYY, month=MM, period (month/quarter/year)
+
+Response 200:
+{
+  "success": true,
+  "data": {
+    "total_income":   "125000.00",
+    "total_expenses":  "45000.00",
+    "net_balance":     "80000.00",
+    "income_breakdown": [
+      { "type": "maintenance", "amount": "100000.00" },
+      { "type": "parking",     "amount":  "25000.00" }
+    ],
+    "expense_breakdown": [
+      { "category": "repairs",   "amount": "20000.00" },
+      { "category": "utilities", "amount": "15000.00" },
+      { "category": "staff",     "amount": "10000.00" }
+    ],
+    "monthly_trend": [
+      { "month": "2026-01", "income": "110000.00", "expenses": "40000.00" }
+    ]
+  }
+}
+
+
+────────────────────────────────────────────────────────────────────────────────
+5.15 INVOICES
+────────────────────────────────────────────────────────────────────────────────
+Method : GET
+URL    : /api/accountant/invoices/
+Auth   : accountant
+Params : status, flat, month, page
+
+Response 200:
+{
+  "count": 5,
+  "results": [
+    {
+      "id":             1,
+      "invoice_number": "INV-2026-001",
+      "flat_number":    "A-101",
+      "resident_name":  "Aarav Sharma",
+      "amount":         "2500.00",
+      "due_date":       "2026-05-15",
+      "status":         "unpaid",
+      "month":          "2026-05-01"
+    }
+  ]
+}
+
+Method : GET  /api/accountant/invoices/{id}/
+Response 200:
+{
+  "id":             1,
+  "invoice_number": "INV-2026-001",
+  "flat_number":    "A-101",
+  "resident_name":  "Aarav Sharma",
+  "society_name":   "Greenwood Heights",
+  "amount":         "2500.00",
+  "due_date":       "2026-05-15",
+  "status":         "unpaid",
+  "line_items": [
+    { "description": "Maintenance May 2026", "amount": "2500.00" }
+  ]
+}
+
+
+────────────────────────────────────────────────────────────────────────────────
+5.9b MONTHLY STATEMENTS — UPLOAD PROOF + DELETE PROOF
+────────────────────────────────────────────────────────────────────────────────
+Auth   : accountant
+Base   : /api/accountant/monthly-statements/
+
+UPLOAD PROOF (multipart form-data, field name = "files", max 10 files)
+  POST /api/accountant/monthly-statements/{id}/upload-proof/
+  Content-Type: multipart/form-data
+
+  Response 200:
+  {
+    "success": true,
+    "message": "3 document(s) uploaded.",
+    "documents": [
+      {
+        "id":       5,
+        "filename": "bank_statement.pdf",
+        "url":      "/media/statements/bank_statement.pdf"
+      }
+    ]
+  }
+
+DELETE PROOF
+  DELETE /api/accountant/monthly-statements/{id}/delete-proof/?doc_id=5
+  Response 200: { "success": true, "message": "Document deleted." }
+
+
+================================================================================
+  ADDITIONS — GLOBAL ROLES & PERMISSIONS API
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+G.1  ROLES — CRUD (Internal / Super Admin)
+────────────────────────────────────────────────────────────────────────────────
+Auth   : super-admin
+Base   : /api/roles-permissions/
+
+GET    /api/roles-permissions/roles/
+POST   /api/roles-permissions/roles/
+GET    /api/roles-permissions/roles/{id}/
+PUT    /api/roles-permissions/roles/{id}/
+PATCH  /api/roles-permissions/roles/{id}/
+DELETE /api/roles-permissions/roles/{id}/
+POST   /api/roles-permissions/roles/{id}/assign-user/
+
+POST Request Body:
+{
+  "name":      "Security Supervisor",
+  "slug":      "security-supervisor",
+  "role_type": "operational",
+  "is_active": true
+}
+
+Response 201:
+{
+  "id":        10,
+  "name":      "Security Supervisor",
+  "slug":      "security-supervisor",
+  "role_type": "operational",
+  "is_active": true
+}
+
+
+────────────────────────────────────────────────────────────────────────────────
+G.2  USERS — LIST + DETAIL (Internal)
+────────────────────────────────────────────────────────────────────────────────
+Auth   : super-admin
+Base   : /api/roles-permissions/
+
+GET    /api/roles-permissions/users/
+GET    /api/roles-permissions/users/{id}/
+PATCH  /api/roles-permissions/users/{id}/
+DELETE /api/roles-permissions/users/{id}/
+
+Params (list): role, status, society, search, page
+
+Response 200 (list):
+{
+  "count": 30,
+  "results": [
+    {
+      "id":         "27",
+      "full_name":  "Aarav Sharma",
+      "mobile":     "9100000001",
+      "status":     "active",
+      "role":       { "id": 3, "name": "Resident", "slug": "resident" },
+      "society":    { "id": 11, "name": "Greenwood Heights" }
+    }
+  ]
+}
+
+
+================================================================================
+  SECTION 6 — SECURITY GUARD APIs
+  Auth: Bearer token with role = security-guard
+        (society-admin and super-admin also accepted by all guard endpoints)
+  Base: /api/security-guard/
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+6.1  GUARD DASHBOARD
+────────────────────────────────────────────────────────────────────────────────
+Method : GET
+URL    : /api/security-guard/dashboard/
+Auth   : security-guard
+
+Response 200:
+{
+  "success": true,
+  "data": {
+    "in_today":          14,
+    "out_today":          9,
+    "at_gate":            5,
+    "alerts":             2,
+    "pending_approvals":  3,
+    "shift_status":      "on_duty",
+    "shift_start":       "08:00:00",
+    "gate_assigned":     "Main Gate"
+  }
+}
+
+Errors:
+  400 → { "success": false, "message": "Guard profile has no linked society." }
+  401 → No token / expired token
+  403 → Role not allowed
+
+
+────────────────────────────────────────────────────────────────────────────────
+6.2  GATE ENTRY
+────────────────────────────────────────────────────────────────────────────────
+Base : /api/security-guard/gate-entry/
+Auth : security-guard
+
+LIST
+  GET /api/security-guard/gate-entry/
+  Params: search, visit_type, status, date, page
+  Response 200: { "count": N, "results": [ <GateEntry>, ... ] }
+
+CREATE
+  POST /api/security-guard/gate-entry/
+  Request Body:
+  {
+    "flat":           "<flat_uuid>",
+    "visitor_name":   "Amit Patel",
+    "mobile":         "9700000001",
+    "visit_type":     "visitor",
+    "purpose":        "personal",
+    "vehicle_number": ""
+  }
+  visit_type choices: visitor | delivery | contractor | domestic_help | cab
+  Response 201:
+  {
+    "id":           1,
+    "visitor_name": "Amit Patel",
+    "mobile":       "9700000001",
+    "visit_type":   "visitor",
+    "purpose":      "personal",
+    "status":       "pending",
+    "created_at":   "2026-05-25T08:00:00Z"
+  }
+
+SUMMARY
+  GET /api/security-guard/gate-entry/summary/
+  Response 200:
+  {
+    "success": true,
+    "data": {
+      "today_entries":    14,
+      "today_exits":       9,
+      "currently_inside":  5,
+      "pending_approval":  3
+    }
+  }
+
+ENTRY/EXIT LOG  (Today's gate movement — NAME / TYPE / IN / OUT / STATUS)
+  GET /api/security-guard/gate-entry/log/
+  Params: search, visit_type, status, date (default=today), page
+  Response 200:
+  {
+    "success":  true,
+    "log_date": "2026-05-25",
+    "stats": { "total": 14, "inside": 5, "exited": 9 },
+    "results": [
+      {
+        "id":                1,
+        "visitor_name":      "Amit Patel",
+        "mobile":            "9700000001",
+        "visit_type":        "visitor",
+        "visit_type_display":"Visitor",
+        "flat_display":      "A-101",
+        "host_name":         "Aarav Sharma",
+        "purpose":           "personal",
+        "vehicle_number":    "",
+        "checked_in_at":     "2026-05-25T08:30:00Z",
+        "checked_out_at":    "2026-05-25T10:15:00Z",
+        "status":            "exited",
+        "status_display":    "Exited"
+      }
+    ]
+  }
+
+ENTRY/EXIT LOG CSV EXPORT
+  GET /api/security-guard/gate-entry/log/export/
+  Params: same as log/
+  Response 200: Content-Type: text/csv
+                Content-Disposition: attachment; filename="entry_exit_log_2026-05-25.csv"
+  Columns: Name, Mobile, Type, Flat, Host, Purpose, Vehicle, In Time, Out Time, Status
+
+DETAIL
+  GET /api/security-guard/gate-entry/<pk>/
+  Response 200: single GateEntry object
+
+
+────────────────────────────────────────────────────────────────────────────────
+6.3  VISITOR LOG
+────────────────────────────────────────────────────────────────────────────────
+Base : /api/security-guard/visitor-log/
+Auth : security-guard
+
+LIST
+  GET /api/security-guard/visitor-log/
+  Params: status, visit_type, date, search, page
+  Response 200: { "count": N, "results": [ <Visitor>, ... ] }
+
+  Visitor object fields:
+    id, visitor_name, mobile, visit_type, flat_display, host_name,
+    purpose, vehicle_number, status, checked_in_at, checked_out_at
+
+APPROVE
+  POST /api/security-guard/visitor-log/<pk>/approve/
+  Response 200: { "success": true, "message": "Visitor approved." }
+
+REJECT
+  POST /api/security-guard/visitor-log/<pk>/reject/
+  Body (optional): { "reason": "Invalid ID provided" }
+  Response 200: { "success": true, "message": "Visitor rejected." }
+
+CHECK-IN
+  POST /api/security-guard/visitor-log/<pk>/check-in/
+  Response 200:
+  {
+    "success":       true,
+    "message":       "Visitor checked in.",
+    "checked_in_at": "2026-05-25T09:00:00Z"
+  }
+
+CHECK-OUT
+  POST /api/security-guard/visitor-log/<pk>/check-out/
+  Response 200:
+  {
+    "success":        true,
+    "message":        "Visitor checked out.",
+    "checked_out_at": "2026-05-25T11:30:00Z"
+  }
+
+
+────────────────────────────────────────────────────────────────────────────────
+6.4  VEHICLE TRACKING
+────────────────────────────────────────────────────────────────────────────────
+Base : /api/security-guard/vehicle-tracking/
+Auth : security-guard
+
+LIST
+  GET /api/security-guard/vehicle-tracking/
+  Params: vehicle_type, status, date, search, page
+  Response 200: { "count": N, "results": [ <VehicleLog>, ... ] }
+
+LOG VEHICLE (CREATE)
+  POST /api/security-guard/vehicle-tracking/
+  Request Body:
+  {
+    "vehicle_number": "MH12AB1234",
+    "vehicle_type":   "car",
+    "direction":      "in",
+    "flat":           "<flat_uuid>",
+    "driver_name":    "Ramesh"
+  }
+  vehicle_type choices: car | bike | auto | truck | other
+  direction choices: in | out
+  Response 201:
+  {
+    "id":             1,
+    "vehicle_number": "MH12AB1234",
+    "vehicle_type":   "car",
+    "direction":      "in",
+    "timestamp":      "2026-05-25T08:30:00Z"
+  }
+
+SUMMARY
+  GET /api/security-guard/vehicle-tracking/summary/
+  Response 200:
+  {
+    "success": true,
+    "data": {
+      "vehicles_in_today":  8,
+      "vehicles_out_today": 7,
+      "currently_inside":   1,
+      "by_type": [
+        { "vehicle_type": "car",  "count": 5 },
+        { "vehicle_type": "bike", "count": 3 }
+      ]
+    }
+  }
+
+DETAIL
+  GET /api/security-guard/vehicle-tracking/<pk>/
+  Response 200: single VehicleLog object
+
+
+────────────────────────────────────────────────────────────────────────────────
+6.5  EMERGENCY ALERTS
+────────────────────────────────────────────────────────────────────────────────
+Base : /api/security-guard/emergency-alerts/
+Auth : security-guard
+
+Status lifecycle: active → acknowledged → resolved
+
+LIST
+  GET /api/security-guard/emergency-alerts/
+  Params: status (active|acknowledged|resolved), page
+  Response 200: { "count": N, "results": [ <EmergencyAlert>, ... ] }
+
+  EmergencyAlert fields:
+    id, alert_type, description, location, status, status_display,
+    created_by_name, created_at, resolved_by, resolved_at
+
+CREATE
+  POST /api/security-guard/emergency-alerts/
+  Request Body:
+  {
+    "alert_type":  "fire",
+    "description": "Smoke in corridor near stairwell A",
+    "location":    "Block A, 2nd floor"
+  }
+  alert_type choices: fire | intrusion | medical | flood | power | other
+  Response 201:
+  {
+    "id":          1,
+    "alert_type":  "fire",
+    "description": "Smoke in corridor near stairwell A",
+    "status":      "active",
+    "created_at":  "2026-05-25T10:00:00Z"
+  }
+
+STATS
+  GET /api/security-guard/emergency-alerts/stats/
+  Response 200:
+  {
+    "success": true,
+    "data": {
+      "active":       2,
+      "acknowledged": 3,
+      "total":        5
+    }
+  }
+
+DETAIL
+  GET /api/security-guard/emergency-alerts/<pk>/
+  Response 200: single EmergencyAlert object
+
+ACKNOWLEDGE  (active → acknowledged)
+  POST /api/security-guard/emergency-alerts/<pk>/acknowledge/
+  Response 200:
+  {
+    "success":     true,
+    "message":     "Alert acknowledged.",
+    "status":      "acknowledged",
+    "resolved_by": "Guard - Ravi Kumar"
+  }
+  Errors: 400 → { "success": false, "message": "Alert is not active." }
+
+RESOLVE  (acknowledged → resolved)
+  POST /api/security-guard/emergency-alerts/<pk>/resolve/
+  Body (optional): { "notes": "Fire extinguished, all clear." }
+  Response 200:
+  {
+    "success":     true,
+    "message":     "Alert resolved.",
+    "status":      "resolved",
+    "resolved_by": "Guard - Ravi Kumar",
+    "resolved_at": "2026-05-25T10:45:00Z"
+  }
+  Errors: 400 → { "success": false, "message": "Alert is not acknowledged." }
+
+
+────────────────────────────────────────────────────────────────────────────────
+6.6  SHIFT MANAGEMENT
+────────────────────────────────────────────────────────────────────────────────
+Base : /api/security-guard/shift-management/
+Auth : security-guard
+
+LIST
+  GET /api/security-guard/shift-management/
+  Params: date, guard, page
+  Response 200: { "count": N, "results": [ <GuardShift>, ... ] }
+
+  GuardShift fields:
+    id, guard_name, shift_date, start_time, end_time,
+    gate_assigned, status (scheduled | on_duty | completed | absent)
+
+TODAY'S SHIFT
+  GET /api/security-guard/shift-management/today/
+  Response 200:
+  {
+    "success": true,
+    "data": {
+      "shift_date":    "2026-05-25",
+      "start_time":    "08:00:00",
+      "end_time":      "16:00:00",
+      "gate_assigned": "Main Gate",
+      "status":        "on_duty"
+    }
+  }
+  Note: Returns { "success": true, "data": null } if no shift scheduled today.
+
+
+────────────────────────────────────────────────────────────────────────────────
+6.7  VISITOR ENTRY  (Register visitor at gate)
+────────────────────────────────────────────────────────────────────────────────
+Base : /api/security-guard/visitor-entry/
+Auth : security-guard
+
+REGISTER VISITOR
+  POST /api/security-guard/visitor-entry/
+  Request Body:
+  {
+    "flat":           "<flat_uuid>",
+    "visitor_name":   "Kavya Reddy",
+    "mobile":         "9800000001",
+    "visit_type":     "visitor",
+    "purpose":        "personal",
+    "vehicle_number": "",
+    "photo_url":      ""
+  }
+  Response 201:
+  {
+    "id":           3,
+    "visitor_name": "Kavya Reddy",
+    "mobile":       "9800000001",
+    "visit_type":   "visitor",
+    "flat_display": "A-101",
+    "status":       "pending",
+    "created_at":   "2026-05-25T11:00:00Z"
+  }
+
+SEARCH  (check if visitor is pre-registered / has a guest pass)
+  GET /api/security-guard/visitor-entry/search/
+  Params: mobile=9800000001  (or name=Kavya)
+  Response 200:
+  {
+    "success": true,
+    "results": [
+      {
+        "id":           5,
+        "pass_code":    "MG-PASS-9XK2",
+        "visitor_name": "Kavya Reddy",
+        "valid_from":   "2026-05-25",
+        "valid_until":  "2026-05-26",
+        "status":       "active",
+        "flat_display": "A-101"
+      }
+    ]
+  }
+
+
+────────────────────────────────────────────────────────────────────────────────
+6.8  QR / PASSCODE VERIFICATION
+────────────────────────────────────────────────────────────────────────────────
+Base : /api/security-guard/qr-passcode/
+Auth : security-guard
+
+VERIFY QR / PASSCODE  (scan QR or type pass code to look up visitor details)
+  POST /api/security-guard/qr-passcode/verify/
+  Request Body — passcode:
+  { "pass_code": "MG-PASS-9XK2" }
+  OR QR scan:
+  { "qr_data": "<base64-encoded-payload>" }
+
+  Response 200 (valid pass):
+  {
+    "success":      true,
+    "valid":        true,
+    "visitor_name": "Kavya Reddy",
+    "mobile":       "9800000001",
+    "flat_display": "A-101",
+    "valid_until":  "2026-05-26",
+    "status":       "active",
+    "pass_id":      5
+  }
+  Response 200 (invalid/expired):
+  { "success": true, "valid": false, "message": "Pass expired or not found." }
+
+CHECK-IN VIA QR / PASSCODE
+  POST /api/security-guard/qr-passcode/checkin/
+  Request Body:
+  { "pass_code": "MG-PASS-9XK2" }
+  Response 200:
+  {
+    "success":       true,
+    "message":       "Visitor checked in via pass.",
+    "visitor_name":  "Kavya Reddy",
+    "flat_display":  "A-101",
+    "checked_in_at": "2026-05-25T11:05:00Z"
+  }
+  Errors:
+    400 → { "success": false, "message": "Pass already used." }
+    400 → { "success": false, "message": "Pass expired." }
+    404 → Pass not found.
+
+
+────────────────────────────────────────────────────────────────────────────────
+6.9  DELIVERY VERIFICATION  (OTP-based handoff workflow)
+────────────────────────────────────────────────────────────────────────────────
+Base : /api/security-guard/delivery-verify/
+Auth : security-guard
+
+Workflow:
+  1. Delivery arrives at gate  → Guard creates entry (POST /)
+  2. Guard approves            → OTP sent to resident (POST /<pk>/approve/)
+  3. Resident shares OTP       → Guard enters it       (POST /<pk>/verify-otp/)
+  4. System marks COLLECTED automatically on OTP success
+
+Status lifecycle:
+  pending → approved / at_gate → otp_sent → collected
+                              ↘ rejected / returned
+
+LIST
+  GET /api/security-guard/delivery-verify/
+  Params: status, flat, date, search, page
+  Response 200: { "count": N, "results": [ <DeliveryEntry>, ... ] }
+
+PENDING (awaiting guard action)
+  GET /api/security-guard/delivery-verify/pending/
+  Response 200: { "count": N, "results": [ ... ] }
+
+AT GATE (arrived, not yet collected)
+  GET /api/security-guard/delivery-verify/at-gate/
+
+SUMMARY
+  GET /api/security-guard/delivery-verify/summary/
+  Response 200:
+  {
+    "success": true,
+    "data": {
+      "today_total": 8,
+      "pending":     2,
+      "collected":   5,
+      "rejected":    1,
+      "returned":    0
+    }
+  }
+
+CREATE DELIVERY
+  POST /api/security-guard/delivery-verify/
+  Request Body:
+  {
+    "flat":             "<flat_uuid>",
+    "delivery_type":    "courier",
+    "sender_name":      "DTDC",
+    "delivery_person":  "Ramesh Kumar",
+    "mobile":           "9900000001",
+    "description":      "Package AWB#1234"
+  }
+  delivery_type choices: food | courier | medicine | grocery | other
+  Response 201:
+  {
+    "id":            1,
+    "flat_display":  "A-101",
+    "delivery_type": "courier",
+    "sender_name":   "DTDC",
+    "status":        "pending",
+    "created_at":    "2026-05-25T12:00:00Z"
+  }
+
+DETAIL
+  GET /api/security-guard/delivery-verify/<pk>/
+  Response 200: full DeliveryEntry with otp fields
+
+APPROVE  (sends OTP to resident)
+  POST /api/security-guard/delivery-verify/<pk>/approve/
+  Response 200: { "success": true, "message": "Delivery approved. OTP sent to resident." }
+
+GENERATE OTP  (resend to resident)
+  POST /api/security-guard/delivery-verify/<pk>/generate-otp/
+  Response 200:
+  {
+    "success":           true,
+    "message":           "New OTP sent to resident.",
+    "otp_expiry_minutes": 15
+  }
+  Note: Dev OTP is always 123456.
+
+VERIFY OTP  (resident tells guard the 6-digit code)
+  POST /api/security-guard/delivery-verify/<pk>/verify-otp/
+  Request Body:
+  { "otp": "123456" }
+  Response 200: { "success": true, "message": "OTP verified. Delivery collected." }
+  Errors:
+    400 → { "success": false, "message": "Invalid OTP." }
+    400 → { "success": false, "message": "OTP expired. Generate a new one." }
+
+MARK AT GATE
+  POST /api/security-guard/delivery-verify/<pk>/at-gate/
+  Response 200: { "success": true, "status": "at_gate" }
+
+MARK COLLECTED
+  POST /api/security-guard/delivery-verify/<pk>/collected/
+  Response 200: { "success": true, "status": "collected" }
+
+REJECT
+  POST /api/security-guard/delivery-verify/<pk>/reject/
+  Body (optional): { "reason": "Recipient not available" }
+  Response 200: { "success": true, "status": "rejected" }
+
+RETURN
+  POST /api/security-guard/delivery-verify/<pk>/return/
+  Response 200: { "success": true, "status": "returned" }
+
+
+────────────────────────────────────────────────────────────────────────────────
+6.10  APPROVED VISITORS  (Pre-approved passes + resident-approved visitors)
+────────────────────────────────────────────────────────────────────────────────
+Base : /api/security-guard/approved-visitors/
+Auth : security-guard
+
+Shows all guest passes (GuestPass) and resident-approved Visitor records for
+the guard's society. Valid/active passes are returned first.
+
+LIST
+  GET /api/security-guard/approved-visitors/
+  Params: visit_type, search, page
+  Response 200:
+  {
+    "count": 4,
+    "results": [
+      {
+        "id":           5,
+        "source":       "guest_pass",
+        "visitor_name": "Kavya Reddy",
+        "mobile":       "9800000001",
+        "flat_display": "A-101",
+        "host_name":    "Aarav Sharma",
+        "visit_type":   "visitor",
+        "status":       "active",
+        "valid_till":   "2026-05-26",
+        "pass_code":    "MG-PASS-9XK2"
+      },
+      {
+        "id":           3,
+        "source":       "visitor",
+        "visitor_name": "Rahul Singh",
+        "mobile":       "9700000002",
+        "flat_display": "B-201",
+        "host_name":    "Kabir Mehta",
+        "visit_type":   "contractor",
+        "status":       "approved",
+        "valid_till":   null,
+        "pass_code":    null
+      }
+    ]
+  }
+
+CHECK-IN
+  POST /api/security-guard/approved-visitors/checkin/
+  Request Body (for visitor):
+  { "visitor_id": 3, "source": "visitor" }
+  OR for guest pass:
+  { "pass_id": 5, "source": "guest_pass" }
+  Response 200:
+  {
+    "success":       true,
+    "message":       "Visitor checked in.",
+    "checked_in_at": "2026-05-25T11:05:00Z"
+  }
+
+CSV EXPORT
+  GET /api/security-guard/approved-visitors/export/
+  Response 200: Content-Type: text/csv
+  Content-Disposition: attachment; filename="approved_visitors.csv"
+
+
+────────────────────────────────────────────────────────────────────────────────
+6.11  CONTACT RESIDENT  (Direct call — search flat → see mobile numbers)
+────────────────────────────────────────────────────────────────────────────────
+Base : /api/security-guard/contact-resident/
+Auth : security-guard
+
+Shows all flats in the guard's linked society with resident mobile numbers for
+direct calling without leaving the app. Scoped to guard's own society.
+
+LIST  (all flats with residents grouped)
+  GET /api/security-guard/contact-resident/
+  Params: search (flat number, building name, resident name, or mobile)
+  Response 200:
+  {
+    "count": 45,
+    "results": [
+      {
+        "flat_id":        "0d241424-4712-4be2-8a1c-984cd3c2297b",
+        "flat_number":    "101",
+        "flat_display":   "A-101",
+        "building_name":  "Block A",
+        "resident_count": 1,
+        "residents": [
+          {
+            "resident_id": 27,
+            "full_name":   "Aarav Sharma",
+            "mobile":      "9100000001",
+            "is_primary":  true
+          }
+        ]
+      }
+    ]
+  }
+
+FLAT CONTACT DETAIL
+  GET /api/security-guard/contact-resident/<flat_uuid>/
+  Response 200:
+  {
+    "success": true,
+    "data": {
+      "flat_id":        "0d241424-4712-4be2-8a1c-984cd3c2297b",
+      "flat_number":    "101",
+      "flat_display":   "A-101",
+      "building_name":  "Block A",
+      "resident_count": 1,
+      "residents": [
+        {
+          "resident_id": 27,
+          "full_name":   "Aarav Sharma",
+          "mobile":      "9100000001",
+          "is_primary":  true
+        }
+      ]
+    }
+  }
+  Errors: 404 → Flat not found in guard's society.
+
+
+================================================================================
+  SECTION 6b — MAINTENANCE STAFF APIs  (Stubs — Coming Soon)
+  Auth: Bearer token with role = maintenance
+================================================================================
+
+  GET  /api/maintenance-staff/dashboard/
+  GET  /api/maintenance-staff/assigned-tasks/
+  POST /api/maintenance-staff/task-updates/
+  GET  /api/maintenance-staff/materials-request/
+  GET  /api/maintenance-staff/schedule/
+  GET  /api/maintenance-staff/work-history/
+
+
+================================================================================
+  SECTION 6c — SUPPORT STAFF APIs  (Stubs — Coming Soon)
+  Auth: Bearer token with role = support-staff
+================================================================================
+
+  GET  /api/support-staff/dashboard/
+  GET  /api/support-staff/assigned-tickets/
+  POST /api/support-staff/ticket-updates/
+  GET  /api/support-staff/escalations/
+  GET  /api/support-staff/service-history/
+
+
+================================================================================
+  SECTION 6d — DELIVERY PARTNER APIs  (Stubs — Coming Soon)
+  Auth: Bearer token with role = delivery
+================================================================================
+
+  GET  /api/delivery-partner/dashboard/
+  GET  /api/delivery-partner/delivery-requests/
+  POST /api/delivery-partner/otp-verification/
+  GET  /api/delivery-partner/delivery-history/
+  GET  /api/delivery-partner/profile/
+
+
+================================================================================
+  SECTION 6e — GUEST USER APIs  (Stubs — Coming Soon)
+  Auth: Bearer token with role = guest
+================================================================================
+
+  GET  /api/guest-user/dashboard/
+  GET  /api/guest-user/visit-request/
+  GET  /api/guest-user/access-pass/
+  GET  /api/guest-user/host-information/
+  GET  /api/guest-user/profile/
+
+
+================================================================================
+  SECTION 7 — COMMON ERRORS & STATUS CODES
+================================================================================
+
+HTTP  Meaning           When it happens
+──────────────────────────────────────────────────────────────────────────────
+200   OK                Success (GET, PATCH, DELETE sometimes)
+201   Created           New resource created (POST)
+400   Bad Request       Validation error, wrong body, constraint violation
+401   Unauthorized      Missing or expired token
+403   Forbidden         Valid token but wrong role, or account not active
+404   Not Found         Resource doesn't exist
+405   Method Not Allowed Using wrong HTTP method
+500   Server Error      Bug — report to backend team
+
+Standard Error Body:
+{
+  "success": false,
+  "message": "Human readable explanation."
+}
+
+Validation Error Body:
+{
+  "field_name": ["Specific field error message."]
+}
+
+Auth Error Body (DRF standard):
+{
+  "detail": "Authentication credentials were not provided."
+}
+
+Token Expired Body:
+{
+  "detail": "Given token not valid for any token type",
+  "code":   "token_not_valid",
+  "messages": [...]
+}
+
+
+================================================================================
+  SECTION 8 — INTEGRATION QUICKSTART
+  (Copy-paste for your frontend / Claude AI)
+================================================================================
+
+STEP 1 — LOGIN AND SAVE TOKENS
+  POST /api/accounts/login/mobile/
+  Body: { "mobile": "9000000001", "otp_code": "123456" }
+  → Save tokens.access and tokens.refresh in localStorage/SecureStorage
+
+STEP 2 — USE TOKEN ON EVERY REQUEST
+  Headers: { "Authorization": "Bearer <access_token>" }
+
+STEP 3 — REFRESH WHEN EXPIRED
+  POST /api/accounts/token/refresh/
+  Body: { "refresh": "<refresh_token>" }
+  → Replace old access with new access
+
+STEP 4 — REDIRECT BY ROLE AFTER LOGIN
+  Read data.role.slug from login response:
+    "super-admin"    → go to Platform Admin dashboard
+    "society-admin"  → go to Society Admin dashboard
+    "accountant"     → go to Accountant dashboard
+    "resident"       → go to Resident dashboard
+
+STEP 5 — READ FEATURES FOR PERMISSION GATING
+  Login response has data.features[] — each item has:
+    module, can_view, can_create, can_edit, can_delete
+  Use these to show/hide UI elements.
+
+
+================================================================================
+  SECTION 9 — SEED DATA (Development Only)
+================================================================================
+
+Role              Mobile          Email                        Password
+──────────────────────────────────────────────────────────────────────
+Super Admin       9000000001      superadmin@minigate.in       123456
+Society Admin     9000000002      (use OTP login)              123456
+Accountant        9000000003      accountant@greenwood.in      123456
+Security Guard    9000000004      (use OTP login)              123456
+Resident          9100000001      (Aarav Sharma, A-101)        OTP 123456
+Resident          9100000002      (Diya Patel)                 OTP 123456
+Resident          9100000003      (Kabir Mehta)                OTP 123456
+
+Society: Greenwood Heights (ID=11)
+Flat A-101 UUID: 0d241424-4712-4be2-8a1c-984cd3c2297b
+Resident Profile ID (Aarav Sharma): 27
+
+
+================================================================================
+  END OF DOCUMENT
+  Generated: 2026-05-23
+  Backend: MiniGate Django 4.2 + DRF + PostgreSQL
+================================================================================

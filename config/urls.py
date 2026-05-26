@@ -1,5 +1,6 @@
 """Root URL configuration for society_platform."""
 from django.conf import settings
+from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
 
@@ -48,6 +49,7 @@ urlpatterns = [
     path("api/society-admin/approvals/",             include("apps.society_admin.approvals.urls")),      # Approval workflows
     path("api/society-admin/security/",              include("apps.society_admin.security.urls")),       # Security oversight
     path("api/society-admin/audit-logs/",            include("apps.society_admin.audit_logs.urls")),     # Audit trail & logs
+    path("api/society-admin/staff-accounts/",       include("apps.society_admin.staff_accounts.urls")), # Staff login accounts
 
     # ── Resident ──────────────────────────────────────────────────────────
     path("api/resident/dashboard/",               include("apps.resident.dashboard.urls")),
@@ -67,6 +69,13 @@ urlpatterns = [
     path("api/security-guard/vehicle-tracking/", include("apps.security_guard.vehicle_tracking.urls")),
     path("api/security-guard/emergency-alerts/", include("apps.security_guard.emergency_alerts.urls")),
     path("api/security-guard/shift-management/", include("apps.security_guard.shift_management.urls")),
+    path("api/security-guard/visitor-entry/",   include("apps.security_guard.visitor_entry.urls")),
+    path("api/security-guard/qr-passcode/",        include("apps.security_guard.qr_passcode.urls")),
+    path("api/security-guard/delivery-verify/",    include("apps.security_guard.delivery_verify.urls")),
+    path("api/security-guard/approved-visitors/",  include("apps.security_guard.approved_visitors.urls")),
+    path("api/security-guard/contact-resident/",   include("apps.security_guard.contact_resident.urls")),
+    path("api/security-guard/scan-access-pass/",   include("apps.security_guard.scan_pass_urls")),
+    path("api/security-guard/access-scan-logs/",   include("apps.security_guard.scan_logs_urls")),
 
     # ── Accountant ────────────────────────────────────────────────────────
     # ── Accountant: BILLING ───────────────────────────────────────────────────
@@ -98,11 +107,13 @@ urlpatterns = [
     path("api/support-staff/service-history/",  include("apps.support_staff.service_history.urls")),
 
     # ── Delivery Partner ──────────────────────────────────────────────────
-    path("api/delivery-partner/dashboard/",        include("apps.delivery_partner.dashboard.urls")),
-    path("api/delivery-partner/delivery-requests/",include("apps.delivery_partner.delivery_requests.urls")),
-    path("api/delivery-partner/otp-verification/", include("apps.delivery_partner.otp_verification.urls")),
-    path("api/delivery-partner/delivery-history/", include("apps.delivery_partner.delivery_history.urls")),
-    path("api/delivery-partner/profile/",          include("apps.delivery_partner.profile.urls")),
+    path("api/delivery-partner/dashboard/",           include("apps.delivery_partner.dashboard.urls")),
+    path("api/delivery-partner/delivery-requests/",   include("apps.delivery_partner.delivery_requests.urls")),
+    path("api/delivery-partner/active-deliveries/",   include("apps.delivery_partner.delivery_requests.urls")),
+    path("api/delivery-partner/otp-verification/",    include("apps.delivery_partner.otp_verification.urls")),
+    path("api/delivery-partner/delivery-history/",    include("apps.delivery_partner.delivery_history.urls")),
+    path("api/delivery-partner/profile/",             include("apps.delivery_partner.profile.urls")),
+    path("api/delivery-partner/access-pass/",         include("apps.delivery_partner.access_pass_urls")),
 
     # ── Guest User ────────────────────────────────────────────────────────
     path("api/guest/dashboard/",      include("apps.guest_user.dashboard.urls")),
@@ -110,4 +121,5 @@ urlpatterns = [
     path("api/guest/host-info/",      include("apps.guest_user.host_information.urls")),
     path("api/guest/access-pass/",    include("apps.guest_user.access_pass.urls")),
     path("api/guest/profile/",        include("apps.guest_user.profile.urls")),
-]
+    path("api/guest-user/access-pass/", include("apps.guest_user.access_pass.urls")),
+] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

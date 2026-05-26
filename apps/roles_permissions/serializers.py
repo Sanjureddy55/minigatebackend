@@ -146,12 +146,92 @@ class AssignUserSerializer(serializers.ModelSerializer):
         return rep
 
 
+# ── System Role Seed ─────────────────────────────────────────────────────────
+
+# All platform roles. Called once during setup-super-admin and via `seed_roles` command.
+_SYSTEM_ROLES = [
+    {
+        "name":        "Super Admin",
+        "slug":        "super-admin",
+        "role_type":   "admin",
+        "description": "Full access to all modules across the platform.",
+        "all_perms":   True,   # grants CRUD on every module
+    },
+    {
+        "name":        "Society Admin",
+        "slug":        "society-admin",
+        "role_type":   "admin",
+        "description": "Manages a single society — buildings, residents, billing, approvals.",
+    },
+    {
+        "name":        "Resident",
+        "slug":        "resident",
+        "role_type":   "resident",
+        "description": "Flat owner / occupant of a society.",
+    },
+    {
+        "name":        "Security Guard",
+        "slug":        "security-guard",
+        "role_type":   "operational",
+        "description": "Gate management, visitor entry, delivery verification.",
+    },
+    {
+        "name":        "Accountant",
+        "slug":        "accountant",
+        "role_type":   "operational",
+        "description": "Billing, payment collection, fund management.",
+    },
+    {
+        "name":        "Maintenance Staff",
+        "slug":        "maintenance-staff",
+        "role_type":   "operational",
+        "description": "Handles maintenance tasks and repairs.",
+    },
+    {
+        "name":        "Support Staff",
+        "slug":        "support-staff",
+        "role_type":   "operational",
+        "description": "Handles resident support tickets and complaints.",
+    },
+]
+
+
+def seed_system_roles() -> dict:
+    """
+    Idempotent: create all system roles if they do not already exist.
+    Returns a summary dict {slug: created_bool}.
+    """
+    summary = {}
+    for rd in _SYSTEM_ROLES:
+        role, created = Role.objects.get_or_create(
+            slug=rd["slug"],
+            defaults={
+                "name":        rd["name"],
+                "role_type":   rd["role_type"],
+                "description": rd["description"],
+                "system_role": True,
+                "is_active":   True,
+            },
+        )
+        if created and rd.get("all_perms"):
+            for module_value, _ in Module.choices:
+                ModulePermission.objects.get_or_create(
+                    role=role, module=module_value,
+                    defaults=dict(can_view=True, can_create=True, can_edit=True, can_delete=True),
+                )
+            logger.info("SYSTEM_ROLE seeded | slug=%s id=%s", rd["slug"], role.pk)
+        summary[rd["slug"]] = created
+    return summary
+
+
 # ── Super Admin One-Shot Setup ────────────────────────────────────────────────
 
 class SuperAdminSetupSerializer(serializers.Serializer):
     """
-    Creates the Super Admin role (if not exists) + one Super Admin user.
-    Password is hardcoded to 123456. OTP is hardcoded to 123456.
+    Idempotent first-run setup:
+      1. Seeds ALL system roles (super-admin, society-admin, resident,
+         security-guard, accountant, maintenance, support-staff)
+      2. Creates the first Super Admin user
     POST /api/roles-permissions/setup-super-admin/
     """
 
@@ -170,52 +250,43 @@ class SuperAdminSetupSerializer(serializers.Serializer):
         return value
 
     def create(self, validated_data: dict) -> dict:
+        from django.db import transaction
+
         from .email_utils import send_welcome_email
 
-        # ── 1. Get or create Super Admin role with all permissions ─────────
-        role, role_created = Role.objects.get_or_create(
-            slug="super-admin",
-            defaults={
-                "name":        "Super Admin",
-                "role_type":   "admin",
-                "description": "Full access to all modules across the platform.",
-                "system_role": True,
-                "is_active":   True,
-            },
-        )
-        if role_created:
-            for module_value, _ in Module.choices:
-                ModulePermission.objects.create(
-                    role=role, module=module_value,
-                    can_view=True, can_create=True, can_edit=True, can_delete=True,
-                )
-            logger.info("SUPER_ADMIN_ROLE created | id=%s", role.pk)
+        with transaction.atomic():
+            # ── 1. Seed all system roles atomically ────────────────────────
+            seed_summary = seed_system_roles()
+            role_created = seed_summary.get("super-admin", False)
 
-        # ── 2. Create Django User with hardcoded password ──────────────────
-        base = validated_data["email"].split("@")[0]
-        username, n = base, 1
-        while User.objects.filter(username=username).exists():
-            username = f"{base}{n}"
-            n += 1
+            # ── 2. Fetch the super-admin role (now guaranteed to exist) ────
+            role = Role.objects.get(slug="super-admin")
 
-        user = User.objects.create_user(
-            username=username,
-            email=validated_data["email"],
-            password=HARDCODED_PASSWORD,
-            first_name=validated_data["full_name"].split()[0],
-            is_staff=True,
-            is_superuser=True,
-        )
+            # ── 3. Create Django User ──────────────────────────────────────
+            base = validated_data["email"].split("@")[0]
+            username, n = base, 1
+            while User.objects.filter(username=username).exists():
+                username = f"{base}{n}"
+                n += 1
 
-        # ── 3. Create UserProfile ──────────────────────────────────────────
-        profile = UserProfile.objects.create(
-            user=user,
-            role=role,
-            full_name=validated_data["full_name"],
-            mobile=validated_data["mobile"],
-            status=UserProfile.Status.ACTIVE,
-            description="Platform Super Administrator",
-        )
+            user = User.objects.create_user(
+                username=username,
+                email=validated_data["email"],
+                password=HARDCODED_PASSWORD,
+                first_name=validated_data["full_name"].split()[0],
+                is_staff=True,
+                is_superuser=True,
+            )
+
+            # ── 4. Create UserProfile ──────────────────────────────────────
+            profile = UserProfile.objects.create(
+                user=user,
+                role=role,
+                full_name=validated_data["full_name"],
+                mobile=validated_data["mobile"],
+                status=UserProfile.Status.ACTIVE,
+                description="Platform Super Administrator",
+            )
 
         logger.info("SUPER_ADMIN_USER created | profile_id=%s email=%s", profile.pk, validated_data["email"])
 

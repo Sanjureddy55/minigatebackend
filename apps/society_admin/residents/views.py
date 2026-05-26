@@ -84,6 +84,12 @@ class SocietyResidentViewSet(viewsets.ReadOnlyModelViewSet):
         if ser.validated_data.get("role"):
             profile.role = ser.validated_data["role"]
             update_fields.append("role")
+        elif profile.role is None:
+            from apps.roles_permissions.models import Role as _Role
+            resident_role = _Role.objects.filter(slug="resident").first()
+            if resident_role:
+                profile.role = resident_role
+                update_fields.append("role")
 
         profile.save(update_fields=update_fields)
         logger.info("RESIDENT_APPROVE | profile_id=%s by=%s", profile.pk, request.user)
