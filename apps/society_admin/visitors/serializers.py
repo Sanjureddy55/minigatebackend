@@ -65,6 +65,60 @@ class VisitorSerializer(serializers.ModelSerializer):
         return attrs
 
 
+class VisitorRegisterSerializer(serializers.Serializer):
+    """
+    Simple visitor registration — matches the 'Register Visitor' UI form.
+
+    Society is auto-detected from the logged-in admin.
+    Flat is resolved by flat_number (e.g. 'A-402') within the admin's society.
+
+    Fields:
+      full_name, mobile, visit_type, flat_number, purpose (opt),
+      host_name (opt), vehicle_number (opt)
+    """
+
+    VISIT_TYPE_CHOICES = Visitor.VisitType.choices
+
+    full_name      = serializers.CharField(max_length=200)
+    mobile         = serializers.CharField(max_length=20)
+    visit_type     = serializers.ChoiceField(choices=VISIT_TYPE_CHOICES, default=Visitor.VisitType.GUEST)
+    flat_number    = serializers.CharField(max_length=50, help_text="e.g. A-402 or B-101")
+    purpose        = serializers.CharField(max_length=500, required=False, allow_blank=True, default="")
+    host_name      = serializers.CharField(max_length=200, required=False, allow_blank=True, default="")
+    vehicle_number = serializers.CharField(max_length=20, required=False, allow_blank=True, default="")
+
+    def validate_mobile(self, value):
+        return value.strip().replace(" ", "").replace("-", "")
+
+    def validate(self, attrs):
+        society = self.context.get("society")
+        flat_number = attrs.get("flat_number", "").strip()
+
+        # Resolve flat within this society
+        flat = (
+            Flat.objects
+            .filter(building__society=society, flat_number__iexact=flat_number)
+            .select_related("building")
+            .first()
+        )
+        if not flat:
+            # List available flat numbers as hint
+            sample = list(
+                Flat.objects
+                .filter(building__society=society)
+                .values_list("flat_number", flat=True)[:10]
+            )
+            raise serializers.ValidationError({
+                "flat_number": (
+                    f"Flat '{flat_number}' not found in this society. "
+                    f"Sample flats: {', '.join(sample)}"
+                )
+            })
+
+        attrs["flat"] = flat
+        return attrs
+
+
 class VisitorApproveSerializer(serializers.Serializer):
     """Body for approve / reject / check-in / check-out actions."""
     notes = serializers.CharField(required=False, allow_blank=True, default="")
