@@ -7,6 +7,7 @@ Mount: /api/society-admin/residents/
 ├──────────────────────────────────────────────────────────────────────────────┤
 │ GET          residents/                               List all residents     │
 │ GET          residents/{id}/                          Resident detail        │
+│ POST         residents/add/                           Direct create (admin)  │
 │ POST         residents/{id}/approve/                  Approve → ACTIVE       │
 │ POST         residents/{id}/reject/                   Reject → INACTIVE      │
 │ POST         residents/{id}/deactivate/               Deactivate resident    │

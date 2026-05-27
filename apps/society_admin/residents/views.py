@@ -5,12 +5,18 @@ from rest_framework import filters, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from apps.common.permissions import IsSocietyAdmin
 
+from apps.common.permissions import IsSocietyAdmin
+from apps.common.utils import get_society_id
+from apps.platform_admin.create_society.models import Society
 from apps.roles_permissions.models import UserProfile
 
-from .serializers import ResidentApproveSerializer, ResidentListSerializer, ResidentRejectSerializer
-from apps.common.utils import get_society_id
+from .serializers import (
+    ResidentApproveSerializer,
+    ResidentCreateByAdminSerializer,
+    ResidentListSerializer,
+    ResidentRejectSerializer,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +28,7 @@ class SocietyResidentViewSet(viewsets.ReadOnlyModelViewSet):
 
     GET    /api/society-admin/residents/
     GET    /api/society-admin/residents/{id}/
+    POST   /api/society-admin/residents/add/          ← NEW: direct create
     POST   /api/society-admin/residents/{id}/approve/
     POST   /api/society-admin/residents/{id}/reject/
     POST   /api/society-admin/residents/{id}/deactivate/
@@ -41,6 +48,7 @@ class SocietyResidentViewSet(viewsets.ReadOnlyModelViewSet):
         return (
             UserProfile.objects
             .select_related("user", "role", "society")
+            .prefetch_related("resident_flats__flat__building")
             .exclude(role__slug="super-admin")
             .order_by("-created_at")
         )
@@ -56,6 +64,82 @@ class SocietyResidentViewSet(viewsets.ReadOnlyModelViewSet):
     def retrieve(self, request, *args, **kwargs):
         instance = self.get_object()
         return Response({"success": True, "data": ResidentListSerializer(instance).data})
+
+    # ── Direct Create (Society Admin adds resident without self-registration) ──
+
+    @action(detail=False, methods=["post"], url_path="add")
+    def add(self, request):
+        """
+        POST /api/society-admin/residents/add/
+
+        Society admin creates a resident directly — no onboarding / OTP flow needed.
+        The resident is created ACTIVE immediately and can log in with OTP 123456.
+
+        Body:
+          {
+            "full_name":      "Rahul Mehta",
+            "email":          "rahul@example.com",   (optional)
+            "mobile":         "9199999999",
+            "type":           "owner",               (owner | tenant)
+            "building":       1,                     (building ID)
+            "flat_number":    "A-201",
+            "family_members": 2,                     (optional, default 0)
+            "vehicles":       1                      (optional, default 0)
+          }
+        """
+        # Resolve the admin's society
+        society_id = get_society_id(request)
+        if not society_id:
+            return Response(
+                {"success": False, "message": "Your account is not linked to any society."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            society = Society.objects.get(pk=society_id)
+        except Society.DoesNotExist:
+            return Response(
+                {"success": False, "message": "Society not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # Merge society into data so validate() can filter buildings by society
+        data = request.data.copy()
+        data["_society"] = society   # consumed by validate(), not stored in DB
+
+        ser = ResidentCreateByAdminSerializer(
+            data=data,
+            context={"request": request, "society": society},
+        )
+        ser.is_valid(raise_exception=True)
+
+        # Inject society for create() (not part of the public request body)
+        validated = dict(ser.validated_data)
+        validated.pop("_society", None)
+        validated["society"] = society
+
+        profile, family_count, vehicle_count = ser.create(validated)
+
+        logger.info(
+            "RESIDENT_ADD_BY_ADMIN | profile=%s society=%s by=%s",
+            profile.pk, society.pk, request.user.pk,
+        )
+        return Response(
+            {
+                "success": True,
+                "message": f"Resident '{profile.full_name}' created successfully.",
+                "data": {
+                    **ResidentListSerializer(profile).data,
+                    "family_members_noted": family_count,
+                    "vehicles_noted":       vehicle_count,
+                    "default_otp":          "123456",
+                    "note": (
+                        "Resident can log in immediately using their mobile number "
+                        "and OTP 123456. Default password is their mobile number."
+                    ),
+                },
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
     # ── Approval Actions ──────────────────────────────────────────────────────
 
