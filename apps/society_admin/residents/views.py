@@ -7,7 +7,6 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.common.permissions import IsSocietyAdmin
-from apps.common.utils import get_society_id
 from apps.platform_admin.create_society.models import Society
 from apps.roles_permissions.models import UserProfile
 
@@ -39,22 +38,39 @@ class SocietyResidentViewSet(viewsets.ReadOnlyModelViewSet):
 
     serializer_class = ResidentListSerializer
     filter_backends  = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ["status", "society", "role"]
+    filterset_fields = ["status", "role"]          # 'society' removed — auto-scoped
     search_fields    = ["full_name", "mobile", "flat_number", "user__email"]
     ordering_fields  = ["full_name", "created_at", "status"]
     ordering         = ["-created_at"]
 
+    def _get_admin_society_id(self):
+        """
+        Returns the society ID of the currently logged-in society admin.
+        Raises PermissionDenied if their account is not linked to any society.
+        """
+        try:
+            society_id = self.request.user.profile.society_id
+            if not society_id:
+                raise PermissionError
+            return society_id
+        except Exception:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("Your account is not linked to any society.")
+
     def get_queryset(self):
+        """Always scope to the logged-in admin's society — no ?society= param accepted."""
+        society_id = self._get_admin_society_id()
         return (
             UserProfile.objects
             .select_related("user", "role", "society")
             .prefetch_related("resident_flats__flat__building")
             .exclude(role__slug="super-admin")
+            .filter(society_id=society_id)          # ← hard-scoped to admin's society
             .order_by("-created_at")
         )
 
     def list(self, request, *args, **kwargs):
-        logger.info("RESIDENT_LIST | user=%s", request.user)
+        logger.info("RESIDENT_LIST | user=%s society=%s", request.user, self._get_admin_society_id())
         qs   = self.filter_queryset(self.get_queryset())
         page = self.paginate_queryset(qs)
         if page is not None:
@@ -62,7 +78,7 @@ class SocietyResidentViewSet(viewsets.ReadOnlyModelViewSet):
         return Response({"count": qs.count(), "results": ResidentListSerializer(qs, many=True).data})
 
     def retrieve(self, request, *args, **kwargs):
-        instance = self.get_object()
+        instance = self.get_object()    # get_queryset already scopes to admin's society
         return Response({"success": True, "data": ResidentListSerializer(instance).data})
 
     # ── Direct Create (Society Admin adds resident without self-registration) ──
@@ -87,13 +103,8 @@ class SocietyResidentViewSet(viewsets.ReadOnlyModelViewSet):
             "vehicles":       1                      (optional, default 0)
           }
         """
-        # Resolve the admin's society
-        society_id = get_society_id(request)
-        if not society_id:
-            return Response(
-                {"success": False, "message": "Your account is not linked to any society."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        # Society comes from the logged-in admin's profile — not from request body
+        society_id = self._get_admin_society_id()
         try:
             society = Society.objects.get(pk=society_id)
         except Society.DoesNotExist:
@@ -231,6 +242,7 @@ class SocietyResidentViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=False, methods=["get"], url_path="pending")
     def pending(self, request):
         """GET /api/society-admin/residents/pending/ — only PENDING residents."""
+        logger.info("RESIDENT_PENDING | user=%s", request.user)
         qs   = self.filter_queryset(self.get_queryset()).filter(status=UserProfile.Status.PENDING)
         page = self.paginate_queryset(qs)
         if page is not None:
@@ -239,11 +251,23 @@ class SocietyResidentViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=False, methods=["get"], url_path="dashboard")
     def dashboard(self, request):
-        """GET /api/society-admin/residents/dashboard/ — KPI summary."""
-        qs = self.get_queryset()
-        society_id = get_society_id(request)
-        if society_id:
-            qs = qs.filter(society_id=society_id)
+        """
+        GET /api/society-admin/residents/dashboard/
+        No params needed — scoped automatically to the admin's own society.
+        """
+        from apps.resident.profile.models import ResidentFlat
+
+        # Always use the admin's own society — ignore any ?society= param
+        society_id = self._get_admin_society_id()
+        qs = self.get_queryset()   # already filtered to admin's society
+
+        # Owners / Tenants from active ResidentFlat links in this society
+        rf_qs = ResidentFlat.objects.filter(
+            society_id=society_id,
+            status=ResidentFlat.Status.ACTIVE,
+        )
+        owners  = rf_qs.filter(is_primary=True).count()
+        tenants = rf_qs.filter(is_primary=False).count()
 
         return Response({
             "success": True,
@@ -252,5 +276,7 @@ class SocietyResidentViewSet(viewsets.ReadOnlyModelViewSet):
                 "active":   qs.filter(status=UserProfile.Status.ACTIVE).count(),
                 "pending":  qs.filter(status=UserProfile.Status.PENDING).count(),
                 "inactive": qs.filter(status=UserProfile.Status.INACTIVE).count(),
+                "owners":   owners,
+                "tenants":  tenants,
             },
         })
