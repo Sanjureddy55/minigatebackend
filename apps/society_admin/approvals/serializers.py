@@ -43,7 +43,8 @@ class ApprovalRequestSerializer(serializers.ModelSerializer):
             "created_at",    "updated_at",
         ]
         read_only_fields = [
-            "id", "reviewer", "reviewer_notes", "reviewed_at",
+            "id", "society",                          # society injected from admin's profile
+            "reviewer", "reviewer_notes", "reviewed_at",
             "created_at", "updated_at",
         ]
 
