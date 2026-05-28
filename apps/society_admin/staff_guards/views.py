@@ -2,47 +2,86 @@ import logging
 
 from django.db.models import Count, Q
 from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework import filters, status, viewsets
+from rest_framework import filters, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
+
 from apps.common.permissions import IsSocietyAdmin
+from apps.platform_admin.create_society.models import Society
 
 from .models import StaffMember
 from .serializers import StaffKPISerializer, StaffMemberSerializer
-from apps.common.utils import get_society_id
 
 logger = logging.getLogger(__name__)
+
+
+def _admin_society(request):
+    """Returns the Society for the logged-in admin. Raises 403 if not linked."""
+    try:
+        sid = request.user.profile.society_id
+        if not sid:
+            raise ValueError
+        return Society.objects.get(pk=sid)
+    except Exception:
+        from rest_framework.exceptions import PermissionDenied
+        raise PermissionDenied("Your account is not linked to any society.")
 
 
 class StaffMemberViewSet(viewsets.ModelViewSet):
     permission_classes = [IsSocietyAdmin]
     """
-    CRUD for society staff members.
+    Staff & Guard Management — society-scoped CRUD.
 
-    GET  /api/society-admin/staff-guards/?society=<id>   — list
-    POST /api/society-admin/staff-guards/                — create
-    GET  /api/society-admin/staff-guards/<id>/           — retrieve
-    PUT  /api/society-admin/staff-guards/<id>/           — full update
-    PATCH /api/society-admin/staff-guards/<id>/          — partial update
-    DELETE /api/society-admin/staff-guards/<id>/         — delete
-
-    GET  /api/society-admin/staff-guards/kpi/?society=<id>  — KPI summary
+    GET    /api/society-admin/staff-guards/           List all staff
+    POST   /api/society-admin/staff-guards/           Add staff member
+    GET    /api/society-admin/staff-guards/{id}/      Retrieve staff
+    PATCH  /api/society-admin/staff-guards/{id}/      Update staff
+    DELETE /api/society-admin/staff-guards/{id}/      Remove staff
+    GET    /api/society-admin/staff-guards/kpi/       Dashboard stats
     """
 
-    queryset          = StaffMember.objects.select_related("society").order_by("role", "full_name")
     serializer_class  = StaffMemberSerializer
     filter_backends   = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields  = ["society", "role", "shift", "status"]
+    filterset_fields  = ["role", "shift", "status"]   # 'society' removed — auto-scoped
     search_fields     = ["full_name", "phone", "email", "gate_assigned"]
     ordering_fields   = ["full_name", "role", "joined_date", "created_at"]
     ordering          = ["role", "full_name"]
 
+    def get_queryset(self):
+        society = _admin_society(self.request)
+        return (
+            StaffMember.objects
+            .filter(society=society)
+            .select_related("society")
+            .order_by("role", "full_name")
+        )
+
+    def perform_create(self, serializer):
+        society = _admin_society(self.request)
+        staff   = serializer.save(society=society)
+        logger.info(
+            "STAFF_CREATE | staff=%s role=%s society=%s by=%s",
+            staff.pk, staff.role, society.pk, self.request.user,
+        )
+
+    def perform_update(self, serializer):
+        staff = serializer.save()
+        logger.info("STAFF_UPDATE | staff=%s by=%s", staff.pk, self.request.user)
+
+    def perform_destroy(self, instance):
+        logger.warning("STAFF_DELETE | staff=%s by=%s", instance.pk, self.request.user)
+        instance.delete()
+
+    # ── KPI Dashboard (3 stat cards: Total Staff, Guards, Housekeeping) ───────
+
     @action(detail=False, methods=["get"], url_path="kpi")
     def kpi(self, request):
-        society_id = get_society_id(request)
-        qs = StaffMember.objects.all()
-        if society_id:
-            qs = qs.filter(society_id=society_id)
+        """
+        GET /api/society-admin/staff-guards/kpi/
+        No params needed — auto-scoped to the admin's own society.
+        """
+        society = _admin_society(request)
+        qs = StaffMember.objects.filter(society=society)
 
         agg = qs.aggregate(
             total    = Count("id"),

@@ -20,10 +20,11 @@ class StaffMemberSerializer(serializers.ModelSerializer):
             "gate_assigned", "joined_date", "notes",
             "created_at", "updated_at",
         ]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        read_only_fields = ["id", "society", "created_at", "updated_at"]
 
 
 class StaffKPISerializer(serializers.Serializer):
+    """Maps to the 3 stat cards in the UI: Total Staff, Guards, Housekeeping."""
     total_staff  = serializers.IntegerField()
     guards       = serializers.IntegerField()
     housekeeping = serializers.IntegerField()
