@@ -18,10 +18,17 @@ class VendorSerializer(serializers.ModelSerializer):
             "contract_start", "contract_end", "monthly_cost",
             "notes", "created_at", "updated_at",
         ]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        read_only_fields = ["id", "society", "created_at", "updated_at"]
+
+    def validate_name(self, value):
+        return value.strip()
+
+    def validate_contact_phone(self, value):
+        return value.strip().replace(" ", "").replace("-", "")
 
 
 class VendorKPISerializer(serializers.Serializer):
+    """Maps to the 3 stat cards: Total, Active, Pending Renewal."""
     total           = serializers.IntegerField()
     active          = serializers.IntegerField()
     pending_renewal = serializers.IntegerField()
