@@ -9,6 +9,8 @@ from rest_framework.views import APIView
 
 from apps.common.permissions import IsSocietyAdmin
 from apps.platform_admin.create_society.models import Society
+from apps.security_guard.shift_management.models import GuardShift
+from apps.security_guard.shift_management.serializers import GuardShiftSerializer
 from apps.society_admin.staff_guards.models import StaffMember
 from apps.society_admin.visitors.models import Visitor
 
@@ -210,3 +212,97 @@ class SecurityDashboardView(APIView):
             "data":           SecurityDashboardSerializer(data).data,
             "live_entry_log": VisitorSerializer(live_log, many=True).data,
         })
+
+
+# ── Guard Roster ──────────────────────────────────────────────────────────────
+
+class GuardRosterView(APIView):
+    permission_classes = [IsSocietyAdmin]
+
+    def get(self, request):
+        """
+        GET /api/society-admin/security/guard-roster/
+
+        Returns guard shifts for the admin's society.
+        Matches the "Guard roster" panel showing name, gate, time, On Duty/Off Duty.
+
+        Query params (all optional):
+          ?date=YYYY-MM-DD   (default: today)
+          ?status=scheduled|active|completed|absent
+          ?guard=<profile_id>
+        """
+        sid   = _admin_society_id(request)
+        today = timezone.localdate()
+
+        date_str = request.query_params.get("date", str(today))
+        qs = (
+            GuardShift.objects
+            .filter(society_id=sid, shift_date=date_str)
+            .select_related("guard")
+            .order_by("start_time")
+        )
+
+        shift_status = request.query_params.get("status")
+        if shift_status:
+            qs = qs.filter(status=shift_status)
+
+        guard_id = request.query_params.get("guard")
+        if guard_id:
+            qs = qs.filter(guard_id=guard_id)
+
+        # Build roster with on_duty flag for the UI badge
+        roster = []
+        for shift in qs:
+            roster.append({
+                **GuardShiftSerializer(shift).data,
+                "on_duty":      shift.status == GuardShift.Status.ACTIVE,
+                "duty_label":   "On Duty" if shift.status == GuardShift.Status.ACTIVE else "Off Duty",
+                "shift_time":   f"{shift.start_time.strftime('%H:%M')} - {shift.end_time.strftime('%H:%M')}",
+            })
+
+        return Response({
+            "success": True,
+            "date":    date_str,
+            "count":   len(roster),
+            "results": roster,
+        })
+
+    def post(self, request):
+        """
+        POST /api/society-admin/security/guard-roster/
+        Schedule a guard shift.
+
+        Body:
+          {
+            "guard":         <profile_id>,
+            "shift_date":    "2026-05-28",
+            "start_time":    "06:00:00",
+            "end_time":      "14:00:00",
+            "gate_assigned": "Gate 1 (Main)",
+            "status":        "scheduled"
+          }
+        """
+        sid     = _admin_society_id(request)
+        society = Society.objects.get(pk=sid)
+
+        data = request.data.copy()
+        data["society"] = society.pk
+
+        ser = GuardShiftSerializer(data=data)
+        ser.is_valid(raise_exception=True)
+        shift = ser.save(society=society)
+
+        logger.info("GUARD_SHIFT_CREATE | shift=%s society=%s by=%s", shift.pk, sid, request.user)
+        return Response(
+            {
+                "success": True,
+                "message": "Guard shift scheduled.",
+                "data": {
+                    **GuardShiftSerializer(shift).data,
+                    "on_duty":    shift.status == GuardShift.Status.ACTIVE,
+                    "duty_label": "On Duty" if shift.status == GuardShift.Status.ACTIVE else "Off Duty",
+                    "shift_time": f"{shift.start_time.strftime('%H:%M')} - {shift.end_time.strftime('%H:%M')}",
+                },
+            },
+            status=status.HTTP_201_CREATED,
+        )
