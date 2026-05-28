@@ -26,10 +26,9 @@ class AuditLogSerializer(serializers.ModelSerializer):
         ]
 
     def get_actor_display(self, obj) -> str:
-        """Returns "Super Admin · Mehul" or "System"."""
         if obj.actor_name == "System":
             return "System"
-        return f"{obj.actor_role} · {obj.actor_name}"
+        return obj.actor_role + " · " + obj.actor_name
 
     def get_time_ago(self, obj) -> str:
         delta = timezone.now() - obj.created_at

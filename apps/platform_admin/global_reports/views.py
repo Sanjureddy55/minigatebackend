@@ -28,6 +28,162 @@ logger = logging.getLogger(__name__)
 PERIOD_DAYS = {"7d": 7, "30d": 30, "90d": 90, "1y": 365}
 
 
+# ── 0. Global Reports Dashboard (single endpoint for the main page) ────────────
+
+class GlobalReportsDashboardView(APIView):
+    """
+    GET /api/platform-admin/global-reports/dashboard/
+
+    Returns everything needed for the Global Reports page:
+    - KPI cards: MRR, Active Societies, Total Users, Cities
+    - MRR growth chart (last 6 months)
+    - Plan distribution (society count per plan)
+    - Top 10 revenue societies (name, city, flats, plan, revenue, status)
+    """
+    permission_classes = [IsSuperAdmin]
+
+    def get(self, request):
+        from datetime import date
+        from apps.platform_admin.subscription_plans.models import SubscriptionPlan
+
+        today = timezone.localdate()
+        now   = timezone.now()
+
+        # ── KPI: Active Societies ────────────────────────────────────────────
+        active_soc   = Society.objects.filter(status=Society.Status.ACTIVE)
+        active_count = active_soc.count()
+        new_quarter  = active_soc.filter(
+            created_at__gte=now - timedelta(days=90)
+        ).count()
+
+        # ── KPI: Cities (distinct cities with active societies) ──────────────
+        cities_count = (
+            active_soc.exclude(city=None)
+            .values("city")
+            .distinct()
+            .count()
+        )
+
+        # ── KPI: Total Users ─────────────────────────────────────────────────
+        total_users  = UserProfile.objects.count()
+        active_users = UserProfile.objects.filter(status=UserProfile.Status.ACTIVE).count()
+
+        # ── KPI: MRR — current month from PlatformPayment ───────────────────
+        mrr_payment = PlatformPayment.objects.filter(
+            status=PlatformPayment.Status.PAID,
+            payment_type=PlatformPayment.PaymentType.SUBSCRIPTION,
+            payment_date__year=today.year,
+            payment_date__month=today.month,
+        ).aggregate(total=Sum("amount"))["total"] or 0
+
+        # Estimated MRR from society plan prices (used if no payment data)
+        plan_price_map = {
+            p.slug: float(p.monthly_price)
+            for p in SubscriptionPlan.objects.filter(status=SubscriptionPlan.Status.ACTIVE)
+        }
+        est_mrr = sum(
+            plan_price_map.get(s["plan"], 0)
+            for s in active_soc.values("plan")
+        )
+        mrr = float(mrr_payment) if mrr_payment else est_mrr
+
+        # MRR vs previous month for growth %
+        prev_month_date = (today.replace(day=1) - timedelta(days=1))
+        mrr_prev_payment = PlatformPayment.objects.filter(
+            status=PlatformPayment.Status.PAID,
+            payment_type=PlatformPayment.PaymentType.SUBSCRIPTION,
+            payment_date__year=prev_month_date.year,
+            payment_date__month=prev_month_date.month,
+        ).aggregate(total=Sum("amount"))["total"] or 0
+        mrr_growth_pct = _pct(mrr, float(mrr_prev_payment)) if mrr_prev_payment else 0.0
+
+        # ── MRR Growth chart — last 6 months ─────────────────────────────────
+        monthly_payments = (
+            PlatformPayment.objects
+            .filter(
+                status=PlatformPayment.Status.PAID,
+                payment_type=PlatformPayment.PaymentType.SUBSCRIPTION,
+            )
+            .annotate(month=TruncMonth("payment_date"))
+            .values("month")
+            .annotate(mrr=Sum("amount"))
+            .order_by("month")
+        )
+        payment_chart = {
+            r["month"].strftime("%b %Y"): float(r["mrr"])
+            for r in monthly_payments
+        }
+
+        # Build 6-month chart — fill missing months with 0 or estimated MRR
+        mrr_chart = []
+        for i in range(5, -1, -1):
+            ref = today.replace(day=1) - timedelta(days=i * 28)
+            label = date(ref.year, ref.month, 1).strftime("%b %Y")
+            val   = payment_chart.get(label, 0)
+            mrr_chart.append({"month": label, "mrr": val})
+
+        # ── Plan Distribution ─────────────────────────────────────────────────
+        by_plan_raw = (
+            Society.objects.filter(status=Society.Status.ACTIVE)
+            .values("plan")
+            .annotate(count=Count("id"))
+            .order_by("-count")
+        )
+        total_active = active_count or 1
+        plan_distribution = [
+            {
+                "plan":    r["plan"],
+                "label":   r["plan"].replace("-", " ").title(),
+                "count":   r["count"],
+                "pct":     round(r["count"] / total_active * 100, 1),
+                "est_mrr": plan_price_map.get(r["plan"], 0) * r["count"],
+            }
+            for r in by_plan_raw
+        ]
+
+        # ── Top Revenue Societies ─────────────────────────────────────────────
+        top_raw = (
+            Society.objects
+            .select_related("city")
+            .filter(status=Society.Status.ACTIVE)
+            .values("id", "name", "city__name", "total_flats", "plan", "status")
+            .order_by("-total_flats")[:10]
+        )
+        top_societies = []
+        for s in top_raw:
+            monthly_rev = plan_price_map.get(s["plan"], 0)
+            top_societies.append({
+                "id":             s["id"],
+                "name":           s["name"],
+                "city":           s["city__name"] or "",
+                "total_flats":    s["total_flats"] or 0,
+                "plan":           s["plan"],
+                "plan_label":     (s["plan"] or "").replace("-", " ").title(),
+                "monthly_revenue":monthly_rev,
+                "status":         s["status"],
+            })
+        # Sort by monthly_revenue desc
+        top_societies.sort(key=lambda x: x["monthly_revenue"], reverse=True)
+
+        return Response({
+            "success": True,
+            "data": {
+                "kpi": {
+                    "mrr":               round(mrr, 2),
+                    "mrr_growth_pct":    mrr_growth_pct,
+                    "active_societies":  active_count,
+                    "new_this_quarter":  new_quarter,
+                    "total_users":       total_users,
+                    "active_users":      active_users,
+                    "cities":            cities_count,
+                },
+                "mrr_chart":          mrr_chart,
+                "plan_distribution":  plan_distribution,
+                "top_societies":      top_societies,
+            },
+        })
+
+
 def _period(request) -> int:
     key = request.query_params.get("period", "30d")
     return PERIOD_DAYS.get(key, 30)
