@@ -9,7 +9,7 @@ class GateSerializer(serializers.ModelSerializer):
     class Meta:
         model  = Gate
         fields = ["id", "society", "name", "status", "status_display", "created_at", "updated_at"]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        read_only_fields = ["id", "society", "created_at", "updated_at"]
 
 
 class SecurityAlertSerializer(serializers.ModelSerializer):
@@ -31,7 +31,7 @@ class SecurityAlertSerializer(serializers.ModelSerializer):
             "acknowledged_by", "acknowledged_by_name", "acknowledged_at",
             "resolved_at",
         ]
-        read_only_fields = ["id", "triggered_at", "acknowledged_at", "resolved_at"]
+        read_only_fields = ["id", "society", "triggered_at", "acknowledged_at", "resolved_at"]
 
     def get_time_ago(self, obj) -> str:
         from django.utils import timezone
