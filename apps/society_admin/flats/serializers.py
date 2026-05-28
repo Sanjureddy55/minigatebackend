@@ -83,6 +83,85 @@ class FlatSerializer(serializers.ModelSerializer):
         return attrs
 
 
+class FlatBulkAddSerializer(serializers.Serializer):
+    """
+    Bulk add flats — two modes:
+
+    MODE 1 — Floor range (auto-generates flat numbers):
+      {
+        "building":       "Block A",
+        "floor_from":     1,
+        "floor_to":       10,
+        "flats_per_floor": 4
+      }
+      Generates: A-101, A-102, A-103, A-104, A-201, ... A-1004  (40 flats)
+
+    MODE 2 — Explicit list:
+      {
+        "building":     "Block A",
+        "flat_numbers": ["A-101", "A-102", "A-201"]
+      }
+    """
+
+    building       = serializers.CharField(max_length=200)
+    # Mode 1 — range
+    floor_from     = serializers.IntegerField(min_value=1, required=False)
+    floor_to       = serializers.IntegerField(min_value=1, required=False)
+    flats_per_floor = serializers.IntegerField(min_value=1, max_value=20, required=False)
+    # Mode 2 — explicit list
+    flat_numbers   = serializers.ListField(
+        child=serializers.CharField(max_length=20),
+        required=False,
+        allow_empty=False,
+        max_length=500,
+    )
+
+    def validate(self, attrs):
+        society = self.context["society"]
+        bname   = attrs["building"].strip()
+
+        building = Building.objects.filter(society=society, name__iexact=bname).first()
+        if not building:
+            available = list(Building.objects.filter(society=society).values_list("name", flat=True))
+            raise serializers.ValidationError({
+                "building": f"Building '{bname}' not found. Available: {', '.join(available) or 'none'}."
+            })
+        attrs["building_obj"] = building
+
+        # Determine mode
+        has_range = all(k in attrs for k in ("floor_from", "floor_to", "flats_per_floor"))
+        has_list  = bool(attrs.get("flat_numbers"))
+
+        if not has_range and not has_list:
+            raise serializers.ValidationError(
+                "Provide either (floor_from + floor_to + flats_per_floor) "
+                "or flat_numbers list."
+            )
+
+        # Build the flat number list to create
+        if has_range:
+            f_from = attrs["floor_from"]
+            f_to   = attrs["floor_to"]
+            if f_to < f_from:
+                raise serializers.ValidationError({"floor_to": "floor_to must be ≥ floor_from."})
+            if (f_to - f_from + 1) * attrs["flats_per_floor"] > 500:
+                raise serializers.ValidationError("Cannot create more than 500 flats at once.")
+
+            parts  = building.name.strip().split()
+            prefix = (parts[-1] if len(parts) > 1 else parts[0])[0].upper()
+
+            numbers = []
+            for floor in range(f_from, f_to + 1):
+                for unit in range(1, attrs["flats_per_floor"] + 1):
+                    numbers.append(f"{prefix}-{floor}{unit:02d}")
+            attrs["_flat_numbers"] = numbers
+
+        else:
+            attrs["_flat_numbers"] = [n.strip().upper() for n in attrs["flat_numbers"]]
+
+        return attrs
+
+
 class FlatCreateSerializer(serializers.Serializer):
     """
     Simple 'Add Flat' form — matches the UI.

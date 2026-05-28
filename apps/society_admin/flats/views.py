@@ -10,7 +10,7 @@ from apps.platform_admin.create_society.models import Society
 from apps.resident.profile.models import ResidentFlat
 
 from .models import Flat
-from .serializers import FlatCreateSerializer, FlatSerializer
+from .serializers import FlatBulkAddSerializer, FlatCreateSerializer, FlatSerializer
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +123,73 @@ class FlatViewSet(viewsets.ModelViewSet):
                 "success": True,
                 "message": f"Flat '{flat.flat_number}' added to {flat.building.name}.",
                 "data":    FlatSerializer(flat).data,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+    # ── Bulk Add ──────────────────────────────────────────────────────────────
+
+    @action(detail=False, methods=["post"], url_path="bulk-add")
+    def bulk_add(self, request):
+        """
+        POST /api/society-admin/flats/bulk-add/
+
+        Add multiple flats at once — two modes:
+
+        MODE 1 — Floor range (auto-generates names):
+          {
+            "building":        "Block A",
+            "floor_from":      1,
+            "floor_to":        10,
+            "flats_per_floor": 4
+          }
+          → Creates A-101 … A-1004  (40 flats)
+
+        MODE 2 — Explicit list:
+          {
+            "building":     "Block A",
+            "flat_numbers": ["A-101", "A-102", "A-201", "A-202"]
+          }
+
+        Max 500 flats per request.
+        Existing flats are skipped (no error).
+        """
+        society = _admin_society(request)
+        ser = FlatBulkAddSerializer(
+            data=request.data,
+            context={"request": request, "society": society},
+        )
+        ser.is_valid(raise_exception=True)
+
+        building     = ser.validated_data["building_obj"]
+        flat_numbers = ser.validated_data["_flat_numbers"]
+
+        # Skip already-existing flats
+        existing = set(
+            Flat.objects
+            .filter(building=building, flat_number__in=flat_numbers)
+            .values_list("flat_number", flat=True)
+        )
+        to_create = [
+            Flat(building=building, flat_number=fn)
+            for fn in flat_numbers
+            if fn not in existing
+        ]
+
+        created = Flat.objects.bulk_create(to_create, ignore_conflicts=True)
+
+        logger.info(
+            "FLAT_BULK_ADD | building=%s created=%d skipped=%d by=%s",
+            building.pk, len(created), len(existing), request.user,
+        )
+        return Response(
+            {
+                "success":  True,
+                "message":  f"{len(created)} flat(s) created in {building.name}.",
+                "created":  len(created),
+                "skipped":  len(existing),
+                "skipped_numbers": sorted(existing) if existing else [],
+                "building": building.name,
             },
             status=status.HTTP_201_CREATED,
         )
