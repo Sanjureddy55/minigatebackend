@@ -1,13 +1,17 @@
+import calendar
 import logging
-from datetime import timedelta
+from datetime import date, timedelta
 
 from django.db.models import Count, Q
 from django.utils import timezone
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from apps.common.permissions import IsSocietyAdmin
 
+from apps.common.permissions import IsSocietyAdmin
+from apps.common.utils import get_society_id
+from apps.platform_admin.create_society.models import Society
 from apps.resident.complaints.models import Complaint
+from apps.resident.payments.models import MaintenanceDue
 from apps.roles_permissions.models import UserProfile
 from apps.society_admin.approvals.models import ApprovalRequest
 from apps.society_admin.security.models import SecurityAlert
@@ -15,9 +19,13 @@ from apps.society_admin.staff_guards.models import StaffMember
 from apps.society_admin.visitors.models import Visitor
 
 from .serializers import SocietyDashboardSerializer
-from apps.common.utils import get_society_id
 
 logger = logging.getLogger(__name__)
+
+STAFF_ROLE_SLUGS = [
+    "security-guard", "accountant",
+    "maintenance-staff", "support-staff", "delivery-partner",
+]
 
 
 def _pct_change(current: int, previous: int) -> float:
@@ -26,34 +34,60 @@ def _pct_change(current: int, previous: int) -> float:
     return round((current - previous) / previous * 100, 1)
 
 
+def _time_ago(dt, now) -> str:
+    if dt is None:
+        return ""
+    delta = now - dt
+    s = int(delta.total_seconds())
+    if s < 60:
+        return "just now"
+    if s < 3600:
+        m = s // 60
+        return f"{m} min ago"
+    if s < 86400:
+        h = s // 3600
+        return f"{h} hr ago"
+    return f"{delta.days} days ago"
+
+
 class SocietyDashboardView(APIView):
-    permission_classes = [IsSocietyAdmin]
     """
     GET /api/society-admin/dashboard/?society=<id>&flow_days=7
 
     Returns:
-      kpis              — Active Residents, Today's Visitors, Pending Approvals, Security Alerts
-      recent_activity   — last 10 events (visitor check-ins, approvals, alerts)
+      kpis              — Row 1: Active Residents, Today's Visitors, Pending Approvals, Security Alerts
+      secondary_kpis    — Row 2: Collection Rate, Occupancy, Active Staff
+      residents_chart   — 6-month resident growth line chart
+      visitor_flow      — per-day counts for the past N days (7/30/90)
+      recent_activity   — last 10 events sorted by time (check-ins, approvals, alerts)
       pending_approvals — top 5 pending approval requests for the widget
       live_visitors     — visitors currently inside or pending today
-      visitor_flow      — per-day counts for the past N days (7/30/90)
+      staff_summary     — staff breakdown
+      complaint_summary — complaint overview
     """
+    permission_classes = [IsSocietyAdmin]
 
     def get(self, request):
         society_id = get_society_id(request)
         if not society_id:
             return Response({"success": False, "message": "society query param required."}, status=400)
 
-        today        = timezone.localdate()
-        now          = timezone.now()
-        month_start  = today.replace(day=1)
+        today            = timezone.localdate()
+        now              = timezone.now()
+        month_start      = today.replace(day=1)
         last_month_start = (month_start - timedelta(days=1)).replace(day=1)
         last_month_end   = month_start - timedelta(days=1)
 
-        # ── KPIs ─────────────────────────────────────────────────────────────
+        # ── Society info ─────────────────────────────────────────────────────
+        try:
+            society     = Society.objects.get(pk=society_id)
+            total_flats = society.total_flats or 0
+        except Society.DoesNotExist:
+            total_flats = 0
 
-        # Active residents
-        active_residents     = UserProfile.objects.filter(
+        # ── KPI Row 1 ─────────────────────────────────────────────────────────
+
+        active_residents = UserProfile.objects.filter(
             society_id=society_id, status=UserProfile.Status.ACTIVE
         ).count()
         prev_active_residents = UserProfile.objects.filter(
@@ -62,7 +96,6 @@ class SocietyDashboardView(APIView):
             created_at__date__lte=last_month_end,
         ).count()
 
-        # Today's visitors
         today_visitors = Visitor.objects.filter(
             society_id=society_id, created_at__date=today
         ).count()
@@ -71,11 +104,9 @@ class SocietyDashboardView(APIView):
             created_at__date__gte=last_month_start,
             created_at__date__lte=last_month_end,
         ).count()
-        # Normalise to daily average for fair comparison
-        days_last_month = (last_month_end - last_month_start).days + 1
+        days_last_month    = (last_month_end - last_month_start).days + 1
         avg_daily_visitors = round(last_month_visitors / days_last_month) if days_last_month > 0 else 0
 
-        # Pending approvals
         pending_approvals = ApprovalRequest.objects.filter(
             society_id=society_id, status=ApprovalRequest.Status.PENDING
         ).count()
@@ -85,7 +116,6 @@ class SocietyDashboardView(APIView):
             created_at__date__lte=last_month_end,
         ).count()
 
-        # Security alerts (active + acknowledged)
         security_alerts = SecurityAlert.objects.filter(
             society_id=society_id,
             status__in=[SecurityAlert.Status.ACTIVE, SecurityAlert.Status.ACKNOWLEDGED],
@@ -107,20 +137,69 @@ class SocietyDashboardView(APIView):
             "alerts_change_pct":    _pct_change(security_alerts, prev_alerts),
         }
 
+        # ── KPI Row 2 ─────────────────────────────────────────────────────────
+
+        # Collection Rate — paid dues / total dues this month
+        month_dues  = MaintenanceDue.objects.filter(society_id=society_id, month=month_start)
+        total_dues  = month_dues.count()
+        paid_dues   = month_dues.filter(status=MaintenanceDue.Status.PAID).count()
+        collection_rate_pct = round(paid_dues / total_dues * 100, 1) if total_dues else 0.0
+
+        # Occupancy — unique flat_numbers with active residents vs total_flats
+        occupied_flats = (
+            UserProfile.objects
+            .filter(
+                society_id=society_id,
+                role__slug="resident",
+                status=UserProfile.Status.ACTIVE,
+            )
+            .exclude(flat_number="")
+            .values("flat_number")
+            .distinct()
+            .count()
+        )
+        occupancy_pct = round(occupied_flats / total_flats * 100, 1) if total_flats else 0.0
+
+        # Active Staff — all staff role profiles
+        active_staff_count = UserProfile.objects.filter(
+            society_id=society_id,
+            role__slug__in=STAFF_ROLE_SLUGS,
+            status=UserProfile.Status.ACTIVE,
+        ).count()
+
+        secondary_kpis = {
+            "collection_rate_pct": collection_rate_pct,
+            "collection_paid":     paid_dues,
+            "collection_total":    total_dues,
+            "occupancy_pct":       occupancy_pct,
+            "occupied_flats":      occupied_flats,
+            "total_flats":         total_flats,
+            "active_staff":        active_staff_count,
+        }
+
+        # ── Residents 6-month Chart ───────────────────────────────────────────
+        residents_chart = []
+        for i in range(5, -1, -1):
+            month_val = today.month - i
+            year_val  = today.year
+            while month_val <= 0:
+                month_val += 12
+                year_val  -= 1
+            last_day       = calendar.monthrange(year_val, month_val)[1]
+            month_end_date = date(year_val, month_val, last_day)
+            count = UserProfile.objects.filter(
+                society_id=society_id,
+                role__slug="resident",
+                created_at__date__lte=month_end_date,
+            ).count()
+            residents_chart.append({
+                "month": date(year_val, month_val, 1).strftime("%b"),
+                "count": count,
+            })
+
         # ── Recent Activity ───────────────────────────────────────────────────
-        activity = []
+        activity_raw = []
 
-        def _mins(dt):
-            delta = now - dt
-            m = int(delta.total_seconds() // 60)
-            if m < 60:
-                return f"{m} min ago"
-            h = m // 60
-            if h < 24:
-                return f"{h} hr ago"
-            return f"{delta.days} days ago"
-
-        # Recent check-ins / check-outs
         recent_visitors = (
             Visitor.objects
             .filter(society_id=society_id, status__in=[Visitor.Status.INSIDE, Visitor.Status.EXITED])
@@ -130,20 +209,20 @@ class SocietyDashboardView(APIView):
         for v in recent_visitors:
             flat_info = ""
             if v.flat:
-                flat_info = f"{v.flat.flat_number}"
+                flat_info = v.flat.flat_number
                 if v.flat.building_id:
                     flat_info = f"{v.flat.building.name} - {flat_info}"
-            event_at = v.checked_out_at or v.checked_in_at or v.created_at
-            action_word = "checked out" if v.status == Visitor.Status.EXITED else "checked in"
-            activity.append({
-                "actor":      "Guard",
-                "action":     f"{action_word} visitor",
-                "subject":    f"{v.full_name} → {flat_info}",
-                "time_ago":   _mins(event_at),
+            event_at     = v.checked_out_at or v.checked_in_at or v.created_at
+            action_word  = "checked out" if v.status == Visitor.Status.EXITED else "checked in"
+            activity_raw.append({
+                "_ts":      event_at,
+                "actor":    "Guard",
+                "action":   f"{action_word} visitor",
+                "subject":  f"{v.full_name} → {flat_info}",
+                "time_ago": _time_ago(event_at, now),
                 "event_type": "visitor",
             })
 
-        # Recent approvals
         recent_approvals = (
             ApprovalRequest.objects
             .filter(
@@ -155,30 +234,31 @@ class SocietyDashboardView(APIView):
         )
         for apr in recent_approvals:
             reviewer = apr.reviewer.full_name if apr.reviewer_id else "Admin"
-            activity.append({
-                "actor":      f"Admin - {reviewer}",
-                "action":     apr.status,
-                "subject":    apr.title,
-                "time_ago":   _mins(apr.reviewed_at or apr.updated_at),
+            sort_dt  = apr.reviewed_at or apr.updated_at
+            activity_raw.append({
+                "_ts":      sort_dt,
+                "actor":    f"Admin - {reviewer}",
+                "action":   apr.status,
+                "subject":  apr.title,
+                "time_ago": _time_ago(sort_dt, now),
                 "event_type": "approval",
             })
 
-        # Recent security alerts
         recent_alerts = (
             SecurityAlert.objects
             .filter(society_id=society_id)
             .order_by("-triggered_at")[:3]
         )
         for al in recent_alerts:
-            activity.append({
-                "actor":      "System",
-                "action":     "raised alert",
-                "subject":    al.get_alert_type_display() + (f" — {al.gate}" if al.gate else ""),
-                "time_ago":   _mins(al.triggered_at),
+            activity_raw.append({
+                "_ts":      al.triggered_at,
+                "actor":    "System",
+                "action":   "raised alert",
+                "subject":  al.get_alert_type_display() + (f" — {al.gate}" if al.gate else ""),
+                "time_ago": _time_ago(al.triggered_at, now),
                 "event_type": "security",
             })
 
-        # Recent complaints raised by residents
         recent_complaints = (
             Complaint.objects
             .filter(society_id=society_id)
@@ -192,16 +272,20 @@ class SocietyDashboardView(APIView):
                 if c.flat.building_id:
                     flat_info = f"{c.flat.building.name} - {flat_info}"
             resident_name = c.resident.full_name if c.resident_id else "Resident"
-            activity.append({
-                "actor":      f"Resident - {resident_name}",
-                "action":     "raised complaint",
-                "subject":    f"{c.complaint_number}: {c.title}" + (f" ({flat_info})" if flat_info else ""),
-                "time_ago":   _mins(c.created_at),
+            activity_raw.append({
+                "_ts":      c.created_at,
+                "actor":    f"Resident - {resident_name}",
+                "action":   "raised complaint",
+                "subject":  f"{c.title}" + (f" ({flat_info})" if flat_info else ""),
+                "time_ago": _time_ago(c.created_at, now),
                 "event_type": "complaint",
             })
 
-        # Sort combined activity by recency (approximate — strings, just keep order)
-        activity = activity[:10]
+        activity_raw.sort(key=lambda x: x["_ts"] or now, reverse=True)
+        activity = [
+            {k: v for k, v in item.items() if k != "_ts"}
+            for item in activity_raw[:10]
+        ]
 
         # ── Pending Approvals Widget ──────────────────────────────────────────
         pending_qs = (
@@ -213,7 +297,7 @@ class SocietyDashboardView(APIView):
         pending_widget = []
         for apr in pending_qs:
             requester_name = apr.requester.full_name if apr.requester_id else "Unknown"
-            flat_info = apr.requester.flat_number if apr.requester_id and apr.requester.flat_number else ""
+            flat_info      = apr.requester.flat_number if apr.requester_id and apr.requester.flat_number else ""
             pending_widget.append({
                 "id":        apr.pk,
                 "title":     apr.title,
@@ -238,28 +322,28 @@ class SocietyDashboardView(APIView):
         for v in live_qs:
             flat_info = ""
             if v.flat:
-                flat_info = f"{v.flat.flat_number}"
-                if v.flat.building_id:
-                    flat_info = f"{v.flat.building.name} - {flat_info}"
+                flat_info = (
+                    f"{v.flat.building.name} - {v.flat.flat_number}"
+                    if v.flat.building_id else v.flat.flat_number
+                )
             ts = v.checked_in_at or v.created_at
             live_widget.append({
-                "id":        v.pk,
-                "full_name": v.full_name,
+                "id":         v.pk,
+                "full_name":  v.full_name,
                 "visit_type": v.visit_type,
-                "flat_info": flat_info,
-                "time":      ts.strftime("%H:%M"),
-                "status":    v.status,
+                "purpose":    v.purpose or "",
+                "flat_info":  flat_info,
+                "time":       ts.strftime("%H:%M"),
+                "status":     v.status,
             })
 
         # ── Visitor Flow Chart ────────────────────────────────────────────────
-        flow_days = int(request.query_params.get("flow_days", 7))
-        flow_days = min(flow_days, 90)
-
+        flow_days = min(int(request.query_params.get("flow_days", 7)), 90)
         flow = []
         for offset in range(flow_days - 1, -1, -1):
-            day = today - timedelta(days=offset)
+            day    = today - timedelta(days=offset)
             day_qs = Visitor.objects.filter(society_id=society_id, created_at__date=day)
-            agg = day_qs.aggregate(
+            agg    = day_qs.aggregate(
                 guest    = Count("id", filter=Q(visit_type=Visitor.VisitType.GUEST)),
                 delivery = Count("id", filter=Q(visit_type=Visitor.VisitType.DELIVERY)),
                 cab      = Count("id", filter=Q(visit_type=Visitor.VisitType.CAB)),
@@ -287,9 +371,9 @@ class SocietyDashboardView(APIView):
         }
 
         # ── Complaint Summary ─────────────────────────────────────────────────
-        cutoff_30d  = now - timedelta(days=30)
-        comp_qs     = Complaint.objects.filter(society_id=society_id)
-        comp_agg    = comp_qs.aggregate(
+        cutoff_30d = now - timedelta(days=30)
+        comp_qs    = Complaint.objects.filter(society_id=society_id)
+        comp_agg   = comp_qs.aggregate(
             open_count    = Count("id", filter=Q(status=Complaint.Status.OPEN)),
             in_progress   = Count("id", filter=Q(status=Complaint.Status.IN_PROGRESS)),
             resolved_30d  = Count("id", filter=Q(
@@ -310,6 +394,8 @@ class SocietyDashboardView(APIView):
 
         data = {
             "kpis":              kpis,
+            "secondary_kpis":    secondary_kpis,
+            "residents_chart":   residents_chart,
             "staff_summary":     staff_summary,
             "complaint_summary": complaint_summary,
             "recent_activity":   activity,

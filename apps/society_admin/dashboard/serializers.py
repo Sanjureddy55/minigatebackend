@@ -12,6 +12,21 @@ class DashboardKPISerializer(serializers.Serializer):
     alerts_change_pct    = serializers.FloatField()
 
 
+class SecondaryKPISerializer(serializers.Serializer):
+    collection_rate_pct = serializers.FloatField()
+    collection_paid     = serializers.IntegerField()
+    collection_total    = serializers.IntegerField()
+    occupancy_pct       = serializers.FloatField()
+    occupied_flats      = serializers.IntegerField()
+    total_flats         = serializers.IntegerField()
+    active_staff        = serializers.IntegerField()
+
+
+class ResidentsChartEntrySerializer(serializers.Serializer):
+    month = serializers.CharField()
+    count = serializers.IntegerField()
+
+
 class RecentActivitySerializer(serializers.Serializer):
     actor      = serializers.CharField()
     action     = serializers.CharField()
@@ -21,31 +36,32 @@ class RecentActivitySerializer(serializers.Serializer):
 
 
 class PendingApprovalWidgetSerializer(serializers.Serializer):
-    id         = serializers.IntegerField()
-    title      = serializers.CharField()
-    priority   = serializers.CharField()
-    stage      = serializers.CharField()
-    requester  = serializers.CharField()
-    flat_info  = serializers.CharField()
+    id        = serializers.IntegerField()
+    title     = serializers.CharField()
+    priority  = serializers.CharField()
+    stage     = serializers.CharField()
+    requester = serializers.CharField()
+    flat_info = serializers.CharField()
 
 
 class LiveVisitorWidgetSerializer(serializers.Serializer):
     id         = serializers.IntegerField()
     full_name  = serializers.CharField()
     visit_type = serializers.CharField()
+    purpose    = serializers.CharField()
     flat_info  = serializers.CharField()
     time       = serializers.CharField()
     status     = serializers.CharField()
 
 
 class VisitorFlowEntrySerializer(serializers.Serializer):
-    date        = serializers.DateField()
-    guest       = serializers.IntegerField()
-    delivery    = serializers.IntegerField()
-    cab         = serializers.IntegerField()
-    service     = serializers.IntegerField()
-    other       = serializers.IntegerField()
-    total       = serializers.IntegerField()
+    date     = serializers.DateField()
+    guest    = serializers.IntegerField()
+    delivery = serializers.IntegerField()
+    cab      = serializers.IntegerField()
+    service  = serializers.IntegerField()
+    other    = serializers.IntegerField()
+    total    = serializers.IntegerField()
 
 
 class StaffSummarySerializer(serializers.Serializer):
@@ -65,6 +81,8 @@ class ComplaintSummarySerializer(serializers.Serializer):
 
 class SocietyDashboardSerializer(serializers.Serializer):
     kpis              = DashboardKPISerializer()
+    secondary_kpis    = SecondaryKPISerializer()
+    residents_chart   = ResidentsChartEntrySerializer(many=True)
     staff_summary     = StaffSummarySerializer()
     complaint_summary = ComplaintSummarySerializer()
     recent_activity   = RecentActivitySerializer(many=True)
