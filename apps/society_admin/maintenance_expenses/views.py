@@ -1,82 +1,107 @@
 import logging
 
+from django.db.models import Count, Q, Sum
+from django.utils import timezone
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.views import APIView
+
 from apps.common.permissions import IsSocietyAdmin
+from apps.platform_admin.create_society.models import Society
+from apps.resident.payments.models import MaintenanceDue
 
 from .models import MaintenanceExpense
 from .serializers import MaintenanceExpenseSerializer
-from apps.common.utils import get_society_id
 
 logger = logging.getLogger(__name__)
+
+
+def _admin_society(request):
+    try:
+        sid = request.user.profile.society_id
+        if not sid:
+            raise ValueError
+        return Society.objects.get(pk=sid)
+    except Exception:
+        from rest_framework.exceptions import PermissionDenied
+        raise PermissionDenied("Your account is not linked to any society.")
 
 
 class MaintenanceExpenseViewSet(viewsets.ModelViewSet):
     permission_classes = [IsSocietyAdmin]
     """
-    Society Admin — record and publish maintenance expenses.
+    Add / Manage Expenses — society-scoped CRUD.
 
-    GET    /api/society-admin/maintenance-expenses/
-    POST   /api/society-admin/maintenance-expenses/
-    GET    /api/society-admin/maintenance-expenses/{id}/
-    PUT    /api/society-admin/maintenance-expenses/{id}/
-    PATCH  /api/society-admin/maintenance-expenses/{id}/
-    DELETE /api/society-admin/maintenance-expenses/{id}/
-    POST   /api/society-admin/maintenance-expenses/{id}/publish/
-    POST   /api/society-admin/maintenance-expenses/{id}/unpublish/
-    GET    /api/society-admin/maintenance-expenses/summary/?society=<id>
+    GET    /api/society-admin/maintenance-expenses/              List all
+    POST   /api/society-admin/maintenance-expenses/              Add expense
+    GET    /api/society-admin/maintenance-expenses/{id}/         Retrieve
+    PATCH  /api/society-admin/maintenance-expenses/{id}/         Update
+    DELETE /api/society-admin/maintenance-expenses/{id}/         Delete
+    POST   /api/society-admin/maintenance-expenses/{id}/publish/   Publish
+    POST   /api/society-admin/maintenance-expenses/{id}/unpublish/ Unpublish
+    GET    /api/society-admin/maintenance-expenses/fund-dashboard/ 6 stat cards
     """
 
     serializer_class = MaintenanceExpenseSerializer
     filter_backends  = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ["society", "category", "is_published"]
+    filterset_fields = ["category", "is_published"]   # 'society' removed — auto-scoped
     search_fields    = ["title", "vendor_name", "notes"]
     ordering_fields  = ["expense_date", "amount", "created_at"]
     ordering         = ["-expense_date"]
 
     def get_queryset(self):
+        society = _admin_society(self.request)
         return (
             MaintenanceExpense.objects
+            .filter(society=society)
             .select_related("society", "created_by")
             .order_by("-expense_date")
         )
 
-    def list(self, request, *args, **kwargs):
-        logger.info("EXPENSE_LIST | user=%s", request.user)
-        qs   = self.filter_queryset(self.get_queryset())
-        page = self.paginate_queryset(qs)
-        if page is not None:
-            return self.get_paginated_response(MaintenanceExpenseSerializer(page, many=True).data)
-        return Response({"count": qs.count(), "results": MaintenanceExpenseSerializer(qs, many=True).data})
+    def get_serializer_context(self):
+        ctx = super().get_serializer_context()
+        ctx["request"] = self.request
+        return ctx
+
+    def perform_create(self, serializer):
+        society = _admin_society(self.request)
+        try:
+            profile = self.request.user.profile
+        except Exception:
+            profile = None
+        obj = serializer.save(society=society, created_by=profile)
+        logger.info(
+            "EXPENSE_CREATE | id=%s title='%s' amount=%s society=%s by=%s",
+            obj.pk, obj.title, obj.amount, society.pk, self.request.user,
+        )
 
     def create(self, request, *args, **kwargs):
-        ser = MaintenanceExpenseSerializer(data=request.data)
+        ser = MaintenanceExpenseSerializer(data=request.data, context={"request": request})
         ser.is_valid(raise_exception=True)
-        obj = ser.save()
-        logger.info("EXPENSE_CREATE | id=%s title='%s' amount=%s society=%s", obj.pk, obj.title, obj.amount, obj.society_id)
+        self.perform_create(ser)
         return Response(
-            {"success": True, "message": "Expense recorded.", "data": MaintenanceExpenseSerializer(obj).data},
+            {"success": True, "message": "Expense recorded.", "data": ser.data},
             status=status.HTTP_201_CREATED,
         )
 
     def retrieve(self, request, *args, **kwargs):
-        return Response({"success": True, "data": MaintenanceExpenseSerializer(self.get_object()).data})
+        return Response({"success": True, "data": MaintenanceExpenseSerializer(
+            self.get_object(), context={"request": request}
+        ).data})
 
-    def update(self, request, *args, **kwargs):
-        partial = kwargs.pop("partial", False)
-        ser = MaintenanceExpenseSerializer(self.get_object(), data=request.data, partial=partial)
-        ser.is_valid(raise_exception=True)
-        obj = ser.save()
-        logger.info("EXPENSE_UPDATE | id=%s", obj.pk)
-        return Response({"success": True, "data": MaintenanceExpenseSerializer(obj).data})
+    def perform_update(self, serializer):
+        obj = serializer.save()
+        logger.info("EXPENSE_UPDATE | id=%s by=%s", obj.pk, self.request.user)
 
     def destroy(self, request, *args, **kwargs):
         obj = self.get_object()
         obj.delete()
-        logger.warning("EXPENSE_DELETE | id=%s title='%s'", obj.pk, obj.title)
+        logger.warning("EXPENSE_DELETE | id=%s title='%s' by=%s", obj.pk, obj.title, request.user)
         return Response({"success": True, "message": "Expense deleted."})
+
+    # ── Publish / Unpublish ───────────────────────────────────────────────────
 
     @action(detail=True, methods=["post"], url_path="publish")
     def publish(self, request, pk=None):
@@ -84,8 +109,12 @@ class MaintenanceExpenseViewSet(viewsets.ModelViewSet):
         obj = self.get_object()
         obj.is_published = True
         obj.save(update_fields=["is_published", "updated_at"])
-        logger.info("EXPENSE_PUBLISH | id=%s title='%s'", obj.pk, obj.title)
-        return Response({"success": True, "message": "Expense published to residents.", "data": MaintenanceExpenseSerializer(obj).data})
+        logger.info("EXPENSE_PUBLISH | id=%s by=%s", obj.pk, request.user)
+        return Response({
+            "success": True,
+            "message": "Expense published — now visible to residents.",
+            "data":    MaintenanceExpenseSerializer(obj, context={"request": request}).data,
+        })
 
     @action(detail=True, methods=["post"], url_path="unpublish")
     def unpublish(self, request, pk=None):
@@ -93,33 +122,81 @@ class MaintenanceExpenseViewSet(viewsets.ModelViewSet):
         obj = self.get_object()
         obj.is_published = False
         obj.save(update_fields=["is_published", "updated_at"])
-        return Response({"success": True, "message": "Expense unpublished.", "data": MaintenanceExpenseSerializer(obj).data})
+        logger.info("EXPENSE_UNPUBLISH | id=%s by=%s", obj.pk, request.user)
+        return Response({
+            "success": True,
+            "message": "Expense unpublished — hidden from residents.",
+            "data":    MaintenanceExpenseSerializer(obj, context={"request": request}).data,
+        })
 
-    @action(detail=False, methods=["get"], url_path="summary")
-    def summary(self, request):
+    # ── Fund Dashboard (6 stat cards + fund usage progress) ──────────────────
+
+    @action(detail=False, methods=["get"], url_path="fund-dashboard")
+    def fund_dashboard(self, request):
         """
-        GET /api/society-admin/maintenance-expenses/summary/?society=<id>
+        GET /api/society-admin/maintenance-expenses/fund-dashboard/
 
-        Returns: total_expenses, total_published, amount_used, by_category breakdown.
+        Returns the 6 stat cards shown in the UI:
+          Total Maintenance Collected | Total Expenses Used | Remaining Balance
+          Pending Dues                | This Month Collection | This Month Expenses
+
+        Also returns:
+          fund_usage_pct      → progress bar %  (61.9% used)
+          latest_expenses     → last 10 published expenses (the table)
         """
-        from django.db.models import Count, Sum
+        society = _admin_society(request)
+        today   = timezone.localdate()
 
-        qs = self.get_queryset()
-        society_id = get_society_id(request)
-        if society_id:
-            qs = qs.filter(society_id=society_id)
+        # ── Maintenance Dues ──
+        all_dues     = MaintenanceDue.objects.filter(society=society)
+        total_collected = float(
+            all_dues.filter(status=MaintenanceDue.Status.PAID)
+            .aggregate(s=Sum("amount"))["s"] or 0
+        )
+        pending_dues = float(
+            all_dues.filter(status__in=[
+                MaintenanceDue.Status.PENDING, MaintenanceDue.Status.OVERDUE
+            ]).aggregate(s=Sum("amount"))["s"] or 0
+        )
+        month_collected = float(
+            all_dues.filter(
+                status=MaintenanceDue.Status.PAID,
+                month__year=today.year, month__month=today.month,
+            ).aggregate(s=Sum("amount"))["s"] or 0
+        )
 
-        total_amount = qs.aggregate(total=Sum("amount"))["total"] or 0
-        by_category  = list(
-            qs.values("category").annotate(total=Sum("amount"), count=Count("id")).order_by("-total")
+        # ── Maintenance Expenses ──
+        all_expenses   = MaintenanceExpense.objects.filter(society=society)
+        total_expenses = float(all_expenses.aggregate(s=Sum("amount"))["s"] or 0)
+        month_expenses = float(
+            all_expenses.filter(
+                expense_date__year=today.year, expense_date__month=today.month,
+            ).aggregate(s=Sum("amount"))["s"] or 0
+        )
+
+        remaining_balance = total_collected - total_expenses
+        fund_usage_pct    = round((total_expenses / total_collected * 100), 1) if total_collected > 0 else 0.0
+
+        # Latest published expenses (the table at bottom of page)
+        latest = (
+            all_expenses
+            .filter(is_published=True)
+            .order_by("-expense_date")[:10]
         )
 
         return Response({
             "success": True,
             "data": {
-                "total_expenses":   qs.count(),
-                "total_published":  qs.filter(is_published=True).count(),
-                "amount_used":      float(total_amount),
-                "by_category":      by_category,
+                "total_maintenance_collected": total_collected,
+                "total_expenses_used":         total_expenses,
+                "remaining_balance":           remaining_balance,
+                "pending_dues":                pending_dues,
+                "this_month_collection":       month_collected,
+                "this_month_expenses":         month_expenses,
+                "fund_usage_pct":              fund_usage_pct,
+                "fund_usage_label":            f"{fund_usage_pct}% used",
+                "latest_expenses":             MaintenanceExpenseSerializer(
+                    latest, many=True, context={"request": request}
+                ).data,
             },
         })

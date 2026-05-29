@@ -26,7 +26,10 @@ class MaintenanceExpenseSerializer(serializers.ModelSerializer):
             "created_by", "created_by_name", "notes",
             "created_at", "updated_at",
         ]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        read_only_fields = [
+            "id", "society", "created_by",   # auto-injected from admin's profile
+            "created_at", "updated_at",
+        ]
 
     def get_visibility_display(self, obj):
         return "Visible" if obj.is_published else "Hidden"

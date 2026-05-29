@@ -13,12 +13,11 @@ from rest_framework.parsers import MultiPartParser
 from rest_framework.response import Response
 from rest_framework.viewsets import ViewSet
 from apps.common.permissions import IsSocietyAdmin
-
+from apps.platform_admin.create_society.models import Society
 from apps.resident.payments.models import MaintenanceDue
 from apps.society_admin.maintenance_expenses.models import MaintenanceExpense
 
 from .models import MonthlyStatement, StatementProofDocument
-from apps.common.utils import get_society_id
 from .serializers import (
     GenerateStatementSerializer,
     MonthlyStatementSerializer,
@@ -26,6 +25,17 @@ from .serializers import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _admin_society(request):
+    try:
+        sid = request.user.profile.society_id
+        if not sid:
+            raise ValueError
+        return Society.objects.get(pk=sid)
+    except Exception:
+        from rest_framework.exceptions import PermissionDenied
+        raise PermissionDenied("Your account is not linked to any society.")
 
 
 class _StatementPagination(PageNumberPagination):
@@ -369,13 +379,10 @@ class MonthlyStatementViewSet(ViewSet):
     # ── List ──────────────────────────────────────────────────────────────────
 
     def list(self, request):
-        society_id = get_society_id(request)
-        if not society_id:
-            return Response({"success": False, "message": "society query param required."}, status=400)
-
+        society = _admin_society(request)
         qs = (
             MonthlyStatement.objects
-            .filter(society_id=society_id)
+            .filter(society=society)
             .prefetch_related("uploaded_proofs")
             .select_related("society")
             .order_by("-month")
@@ -420,7 +427,8 @@ class MonthlyStatementViewSet(ViewSet):
         ser.is_valid(raise_exception=True)
         d = ser.validated_data
 
-        society_id = d["society"]
+        society    = _admin_society(request)
+        society_id = society.pk
         year       = d["year"]
         month      = d["month"]
         month_start = datetime.date(year, month, 1)

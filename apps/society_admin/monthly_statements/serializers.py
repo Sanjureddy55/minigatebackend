@@ -54,20 +54,23 @@ class MonthlyStatementSerializer(serializers.ModelSerializer):
 class GenerateStatementSerializer(serializers.Serializer):
     """
     POST /generate/ — compute financials for a month and save as draft.
-    opening_balance defaults to auto-fetched from previous month's closing balance.
-    total_collected / total_expenses can be overridden (admin-adjusted values).
+
+    Society is auto-injected from the logged-in admin (not required in body).
+    opening_balance defaults to previous month's closing balance (auto).
+    total_collected / total_expenses can be overridden if needed.
     """
-    society          = serializers.IntegerField()
-    year             = serializers.IntegerField()
+    year             = serializers.IntegerField(min_value=2020, max_value=2100)
     month            = serializers.IntegerField(min_value=1, max_value=12)
     opening_balance  = serializers.DecimalField(
-        max_digits=14, decimal_places=2, required=False, allow_null=True
+        max_digits=14, decimal_places=2, required=False, allow_null=True,
+        help_text="Leave blank to auto-fetch from previous month."
     )
-    # Optional overrides — if not provided, computed from live DB
     total_collected  = serializers.DecimalField(
-        max_digits=14, decimal_places=2, required=False, allow_null=True
+        max_digits=14, decimal_places=2, required=False, allow_null=True,
+        help_text="Leave blank to compute from paid MaintenanceDues."
     )
     total_expenses   = serializers.DecimalField(
-        max_digits=14, decimal_places=2, required=False, allow_null=True
+        max_digits=14, decimal_places=2, required=False, allow_null=True,
+        help_text="Leave blank to compute from MaintenanceExpenses."
     )
     notes            = serializers.CharField(required=False, allow_blank=True, default="")
