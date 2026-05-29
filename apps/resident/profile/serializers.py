@@ -57,10 +57,11 @@ class FamilyMemberSerializer(serializers.ModelSerializer):
         model  = FamilyMember
         fields = [
             "id", "resident", "flat",
-            "name", "relation", "relation_display", "phone", "photo_url",
+            "name", "relation", "relation_display",
+            "phone", "age", "gate_access", "photo_url",
             "created_at", "updated_at",
         ]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        read_only_fields = ["id", "resident", "flat", "created_at", "updated_at"]
 
 
 class VehicleSerializer(serializers.ModelSerializer):
@@ -72,10 +73,11 @@ class VehicleSerializer(serializers.ModelSerializer):
         fields = [
             "id", "resident", "flat",
             "vehicle_name", "vehicle_type", "vehicle_type_display",
-            "plate_number", "parking_slot", "status", "status_display",
+            "plate_number", "color", "parking_slot",
+            "status", "status_display",
             "created_at", "updated_at",
         ]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        read_only_fields = ["id", "resident", "flat", "status", "created_at", "updated_at"]
 
 
 class PetSerializer(serializers.ModelSerializer):
@@ -87,10 +89,10 @@ class PetSerializer(serializers.ModelSerializer):
         fields = [
             "id", "resident", "flat",
             "name", "calling_name", "pet_type", "pet_type_display",
-            "gender", "gender_display", "color",
+            "breed", "gender", "gender_display", "color", "vaccinated",
             "created_at", "updated_at",
         ]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        read_only_fields = ["id", "resident", "flat", "created_at", "updated_at"]
 
 
 class DailyHelpSerializer(serializers.ModelSerializer):

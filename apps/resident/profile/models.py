@@ -87,12 +87,16 @@ class FamilyMember(models.Model):
         on_delete=models.CASCADE,
         related_name="family_members",
     )
-    name      = models.CharField(max_length=200)
-    relation  = models.CharField(max_length=20, choices=Relation.choices)
-    phone     = models.CharField(max_length=20, blank=True, default="")
-    photo_url = models.CharField(max_length=500, blank=True, default="")
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    name        = models.CharField(max_length=200)
+    relation    = models.CharField(max_length=20, choices=Relation.choices)
+    phone       = models.CharField(max_length=20, blank=True, default="")
+    age         = models.PositiveSmallIntegerField(null=True, blank=True,
+                                                   help_text="Age in years.")
+    gate_access = models.BooleanField(default=False,
+                                      help_text="Whether this family member has gate access.")
+    photo_url   = models.CharField(max_length=500, blank=True, default="")
+    created_at  = models.DateTimeField(auto_now_add=True)
+    updated_at  = models.DateTimeField(auto_now=True)
 
     class Meta:
         app_label = "resident_profile"
@@ -104,14 +108,15 @@ class FamilyMember(models.Model):
 
 class Vehicle(models.Model):
     class VehicleType(models.TextChoices):
-        CAR     = "car",     _("Car")
-        BIKE    = "bike",    _("Bike")
-        SCOOTER = "scooter", _("Scooter")
-        OTHER   = "other",   _("Other")
+        CAR_SEDAN   = "car_sedan",   _("Car (Sedan)")
+        CAR_SUV     = "car_suv",     _("Car (SUV)")
+        TWO_WHEELER = "two_wheeler", _("Two-Wheeler")
+        OTHER       = "other",       _("Other")
 
     class Status(models.TextChoices):
-        ACTIVE   = "active",   _("Active")
-        INACTIVE = "inactive", _("Inactive")
+        PENDING  = "pending",  _("Pending")
+        APPROVED = "approved", _("Approved")
+        REJECTED = "rejected", _("Rejected")
 
     resident      = models.ForeignKey(
         "roles_permissions.UserProfile",
@@ -126,8 +131,9 @@ class Vehicle(models.Model):
     vehicle_name  = models.CharField(max_length=100)
     vehicle_type  = models.CharField(max_length=20, choices=VehicleType.choices)
     plate_number  = models.CharField(max_length=20, unique=True)
+    color         = models.CharField(max_length=50, blank=True, default="")
     parking_slot  = models.CharField(max_length=50, blank=True, default="")
-    status        = models.CharField(max_length=20, choices=Status.choices, default=Status.ACTIVE)
+    status        = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
     created_at    = models.DateTimeField(auto_now_add=True)
     updated_at    = models.DateTimeField(auto_now=True)
 
@@ -163,8 +169,10 @@ class Pet(models.Model):
     name         = models.CharField(max_length=100)
     calling_name = models.CharField(max_length=100, blank=True, default="")
     pet_type     = models.CharField(max_length=20, choices=PetType.choices)
-    gender       = models.CharField(max_length=10, choices=Gender.choices)
+    breed        = models.CharField(max_length=100, blank=True, default="")
+    gender       = models.CharField(max_length=10, choices=Gender.choices, blank=True, default="")
     color        = models.CharField(max_length=50, blank=True, default="")
+    vaccinated   = models.BooleanField(default=False)
     created_at   = models.DateTimeField(auto_now_add=True)
     updated_at   = models.DateTimeField(auto_now=True)
 

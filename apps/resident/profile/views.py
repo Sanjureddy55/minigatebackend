@@ -2,6 +2,7 @@ import logging
 
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters, status, viewsets
+from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from apps.common.permissions import IsResident
@@ -22,50 +23,97 @@ logger = logging.getLogger(__name__)
 class FamilyMemberViewSet(viewsets.ModelViewSet):
     permission_classes = [IsResident]
     """
-    CRUD for family members linked to a resident + flat.
+    Family Members — auto-scoped to the logged-in resident.
 
-    GET    /api/resident/profile/family/
-    POST   /api/resident/profile/family/
-    GET    /api/resident/profile/family/{id}/
-    PUT    /api/resident/profile/family/{id}/
-    PATCH  /api/resident/profile/family/{id}/
-    DELETE /api/resident/profile/family/{id}/
+    GET    /api/resident/profile/family/            List (resident's own members)
+    POST   /api/resident/profile/family/            Add member (no resident/flat in body)
+    GET    /api/resident/profile/family/stats/      Stats: total, gate_access, no_access
+    GET    /api/resident/profile/family/{id}/       Retrieve
+    PATCH  /api/resident/profile/family/{id}/       Update
+    DELETE /api/resident/profile/family/{id}/       Delete
     """
 
     serializer_class = FamilyMemberSerializer
     filter_backends  = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ["resident", "flat", "relation"]
+    filterset_fields = ["relation", "gate_access"]
     search_fields    = ["name", "phone"]
     ordering_fields  = ["name", "created_at"]
     ordering         = ["name"]
 
+    def _profile_and_flat(self):
+        """Returns (UserProfile, Flat) for the logged-in resident."""
+        profile = self.request.user.profile
+        rf = (
+            ResidentFlat.objects
+            .filter(profile=profile, status=ResidentFlat.Status.ACTIVE)
+            .order_by("-is_primary")
+            .first()
+        )
+        flat = rf.flat if rf else None
+        return profile, flat
+
     def get_queryset(self):
+        profile, _ = self._profile_and_flat()
         return (
             FamilyMember.objects
-            .select_related("resident", "flat")
+            .filter(resident=profile)
+            .select_related("flat")
             .order_by("name")
         )
+
+    # ── Stats (3 cards in UI) ─────────────────────────────────────────────────
+
+    @action(detail=False, methods=["get"], url_path="stats")
+    def stats(self, request):
+        """GET /api/resident/profile/family/stats/ — Total, Gate Access, No Access."""
+        profile, _ = self._profile_and_flat()
+        qs          = FamilyMember.objects.filter(resident=profile)
+        total       = qs.count()
+        gate_access = qs.filter(gate_access=True).count()
+        no_access   = total - gate_access
+        return Response({
+            "success": True,
+            "data": {
+                "total_members": total,
+                "gate_access":   gate_access,
+                "no_access":     no_access,
+            },
+        })
+
+    # ── CRUD ──────────────────────────────────────────────────────────────────
 
     def list(self, request, *args, **kwargs):
         qs   = self.filter_queryset(self.get_queryset())
         page = self.paginate_queryset(qs)
+        data = FamilyMemberSerializer(page if page is not None else qs, many=True).data
         if page is not None:
-            return self.get_paginated_response(FamilyMemberSerializer(page, many=True).data)
-        return Response({"count": qs.count(), "results": FamilyMemberSerializer(qs, many=True).data})
+            return self.get_paginated_response(data)
+        return Response({"count": len(data), "results": data})
 
     def create(self, request, *args, **kwargs):
+        """
+        POST /api/resident/profile/family/
+        resident and flat are auto-injected — no need to pass them in body.
+
+        Body: { name, relation, phone (opt), age (opt), gate_access (opt) }
+        """
+        profile, flat = self._profile_and_flat()
+        if not flat:
+            return Response(
+                {"success": False, "message": "No active flat linked. Please link a flat first."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         ser = FamilyMemberSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
-        obj = ser.save()
-        logger.info("FAMILY_MEMBER_CREATE | id=%s name='%s'", obj.pk, obj.name)
+        obj = ser.save(resident=profile, flat=flat)
+        logger.info("FAMILY_MEMBER_CREATE | id=%s name='%s' resident=%s", obj.pk, obj.name, profile.pk)
         return Response({"success": True, "data": FamilyMemberSerializer(obj).data}, status=status.HTTP_201_CREATED)
 
     def retrieve(self, request, *args, **kwargs):
         return Response({"success": True, "data": FamilyMemberSerializer(self.get_object()).data})
 
-    def update(self, request, *args, **kwargs):
-        partial = kwargs.pop("partial", False)
-        ser = FamilyMemberSerializer(self.get_object(), data=request.data, partial=partial)
+    def partial_update(self, request, *args, **kwargs):
+        ser = FamilyMemberSerializer(self.get_object(), data=request.data, partial=True)
         ser.is_valid(raise_exception=True)
         obj = ser.save()
         return Response({"success": True, "data": FamilyMemberSerializer(obj).data})
@@ -73,109 +121,217 @@ class FamilyMemberViewSet(viewsets.ModelViewSet):
     def destroy(self, request, *args, **kwargs):
         obj = self.get_object()
         obj.delete()
-        logger.info("FAMILY_MEMBER_DELETE | id=%s", obj.pk)
+        logger.info("FAMILY_MEMBER_DELETE | id=%s by=%s", obj.pk, request.user)
         return Response({"success": True, "message": "Family member removed."})
 
 
 class VehicleViewSet(viewsets.ModelViewSet):
     permission_classes = [IsResident]
     """
-    CRUD for vehicles registered under a resident.
+    Vehicles — auto-scoped to the logged-in resident.
 
-    GET    /api/resident/profile/vehicles/
-    POST   /api/resident/profile/vehicles/
-    GET    /api/resident/profile/vehicles/{id}/
-    PUT    /api/resident/profile/vehicles/{id}/
-    PATCH  /api/resident/profile/vehicles/{id}/
-    DELETE /api/resident/profile/vehicles/{id}/
+    GET    /api/resident/profile/vehicles/            List (resident's own vehicles)
+    POST   /api/resident/profile/vehicles/            Register vehicle (no resident/flat in body)
+    GET    /api/resident/profile/vehicles/stats/      Stats: total, approved, pending
+    GET    /api/resident/profile/vehicles/{id}/       Retrieve
+    PATCH  /api/resident/profile/vehicles/{id}/       Update
+    DELETE /api/resident/profile/vehicles/{id}/       Delete
     """
 
     serializer_class = VehicleSerializer
     filter_backends  = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ["resident", "flat", "vehicle_type", "status"]
+    filterset_fields = ["vehicle_type", "status"]
     search_fields    = ["vehicle_name", "plate_number", "parking_slot"]
     ordering_fields  = ["vehicle_name", "created_at"]
     ordering         = ["vehicle_name"]
 
+    def _profile_and_flat(self):
+        """Returns (UserProfile, Flat) for the logged-in resident."""
+        profile = self.request.user.profile
+        rf = (
+            ResidentFlat.objects
+            .filter(profile=profile, status=ResidentFlat.Status.ACTIVE)
+            .order_by("-is_primary")
+            .first()
+        )
+        flat = rf.flat if rf else None
+        return profile, flat
+
     def get_queryset(self):
-        return Vehicle.objects.select_related("resident", "flat").order_by("vehicle_name")
+        profile, _ = self._profile_and_flat()
+        return (
+            Vehicle.objects
+            .filter(resident=profile)
+            .select_related("flat")
+            .order_by("vehicle_name")
+        )
+
+    # ── Stats (3 cards in UI) ─────────────────────────────────────────────────
+
+    @action(detail=False, methods=["get"], url_path="stats")
+    def stats(self, request):
+        """GET /api/resident/profile/vehicles/stats/ — Total, Approved, Pending."""
+        profile, _ = self._profile_and_flat()
+        qs       = Vehicle.objects.filter(resident=profile)
+        total    = qs.count()
+        approved = qs.filter(status=Vehicle.Status.APPROVED).count()
+        pending  = qs.filter(status=Vehicle.Status.PENDING).count()
+        return Response({
+            "success": True,
+            "data": {
+                "total":    total,
+                "approved": approved,
+                "pending":  pending,
+            },
+        })
+
+    # ── CRUD ──────────────────────────────────────────────────────────────────
 
     def list(self, request, *args, **kwargs):
         qs   = self.filter_queryset(self.get_queryset())
         page = self.paginate_queryset(qs)
+        data = VehicleSerializer(page if page is not None else qs, many=True).data
         if page is not None:
-            return self.get_paginated_response(VehicleSerializer(page, many=True).data)
-        return Response({"count": qs.count(), "results": VehicleSerializer(qs, many=True).data})
+            return self.get_paginated_response(data)
+        return Response({"count": len(data), "results": data})
 
     def create(self, request, *args, **kwargs):
+        """
+        POST /api/resident/profile/vehicles/
+        resident and flat are auto-injected — no need to pass them in body.
+
+        Body: { vehicle_name, vehicle_type, plate_number, color (opt), parking_slot (opt) }
+        """
+        profile, flat = self._profile_and_flat()
+        if not flat:
+            return Response(
+                {"success": False, "message": "No active flat linked. Please link a flat first."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         ser = VehicleSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
-        obj = ser.save()
-        logger.info("VEHICLE_CREATE | id=%s plate='%s'", obj.pk, obj.plate_number)
+        obj = ser.save(resident=profile, flat=flat)
+        logger.info("VEHICLE_CREATE | id=%s plate='%s' resident=%s", obj.pk, obj.plate_number, profile.pk)
         return Response({"success": True, "data": VehicleSerializer(obj).data}, status=status.HTTP_201_CREATED)
 
     def retrieve(self, request, *args, **kwargs):
         return Response({"success": True, "data": VehicleSerializer(self.get_object()).data})
 
-    def update(self, request, *args, **kwargs):
-        partial = kwargs.pop("partial", False)
-        ser = VehicleSerializer(self.get_object(), data=request.data, partial=partial)
+    def partial_update(self, request, *args, **kwargs):
+        ser = VehicleSerializer(self.get_object(), data=request.data, partial=True)
         ser.is_valid(raise_exception=True)
-        return Response({"success": True, "data": VehicleSerializer(ser.save()).data})
+        obj = ser.save()
+        return Response({"success": True, "data": VehicleSerializer(obj).data})
 
     def destroy(self, request, *args, **kwargs):
         obj = self.get_object()
         obj.delete()
+        logger.info("VEHICLE_DELETE | id=%s by=%s", obj.pk, request.user)
         return Response({"success": True, "message": "Vehicle removed."})
 
 
 class PetViewSet(viewsets.ModelViewSet):
     permission_classes = [IsResident]
     """
-    CRUD for pets registered under a resident.
+    Pets — auto-scoped to the logged-in resident.
 
-    GET    /api/resident/profile/pets/
-    POST   /api/resident/profile/pets/
-    GET    /api/resident/profile/pets/{id}/
-    PUT    /api/resident/profile/pets/{id}/
-    PATCH  /api/resident/profile/pets/{id}/
-    DELETE /api/resident/profile/pets/{id}/
+    GET    /api/resident/profile/pets/            List (resident's own pets)
+    POST   /api/resident/profile/pets/            Add pet (no resident/flat in body)
+    GET    /api/resident/profile/pets/stats/      Stats: total, vaccinated, unvaccinated
+    GET    /api/resident/profile/pets/{id}/       Retrieve
+    PATCH  /api/resident/profile/pets/{id}/       Update
+    DELETE /api/resident/profile/pets/{id}/       Delete
     """
 
     serializer_class = PetSerializer
     filter_backends  = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ["resident", "flat", "pet_type", "gender"]
-    search_fields    = ["name", "calling_name", "color"]
+    filterset_fields = ["pet_type", "gender", "vaccinated"]
+    search_fields    = ["name", "calling_name", "breed", "color"]
     ordering_fields  = ["name", "created_at"]
     ordering         = ["name"]
 
+    def _profile_and_flat(self):
+        """Returns (UserProfile, Flat) for the logged-in resident."""
+        profile = self.request.user.profile
+        rf = (
+            ResidentFlat.objects
+            .filter(profile=profile, status=ResidentFlat.Status.ACTIVE)
+            .order_by("-is_primary")
+            .first()
+        )
+        flat = rf.flat if rf else None
+        return profile, flat
+
     def get_queryset(self):
-        return Pet.objects.select_related("resident", "flat").order_by("name")
+        profile, _ = self._profile_and_flat()
+        return (
+            Pet.objects
+            .filter(resident=profile)
+            .select_related("flat")
+            .order_by("name")
+        )
+
+    # ── Stats (3 cards in UI) ─────────────────────────────────────────────────
+
+    @action(detail=False, methods=["get"], url_path="stats")
+    def stats(self, request):
+        """GET /api/resident/profile/pets/stats/ — Total, Vaccinated, Unvaccinated."""
+        profile, _ = self._profile_and_flat()
+        qs          = Pet.objects.filter(resident=profile)
+        total       = qs.count()
+        vaccinated  = qs.filter(vaccinated=True).count()
+        unvaccinated = total - vaccinated
+        return Response({
+            "success": True,
+            "data": {
+                "total_pets":   total,
+                "vaccinated":   vaccinated,
+                "unvaccinated": unvaccinated,
+            },
+        })
+
+    # ── CRUD ──────────────────────────────────────────────────────────────────
 
     def list(self, request, *args, **kwargs):
         qs   = self.filter_queryset(self.get_queryset())
         page = self.paginate_queryset(qs)
+        data = PetSerializer(page if page is not None else qs, many=True).data
         if page is not None:
-            return self.get_paginated_response(PetSerializer(page, many=True).data)
-        return Response({"count": qs.count(), "results": PetSerializer(qs, many=True).data})
+            return self.get_paginated_response(data)
+        return Response({"count": len(data), "results": data})
 
     def create(self, request, *args, **kwargs):
+        """
+        POST /api/resident/profile/pets/
+        resident and flat are auto-injected — no need to pass them in body.
+
+        Body: { name, pet_type, breed (opt), gender (opt), color (opt), vaccinated (opt), calling_name (opt) }
+        """
+        profile, flat = self._profile_and_flat()
+        if not flat:
+            return Response(
+                {"success": False, "message": "No active flat linked. Please link a flat first."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         ser = PetSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
-        obj = ser.save()
+        obj = ser.save(resident=profile, flat=flat)
+        logger.info("PET_CREATE | id=%s name='%s' resident=%s", obj.pk, obj.name, profile.pk)
         return Response({"success": True, "data": PetSerializer(obj).data}, status=status.HTTP_201_CREATED)
 
     def retrieve(self, request, *args, **kwargs):
         return Response({"success": True, "data": PetSerializer(self.get_object()).data})
 
-    def update(self, request, *args, **kwargs):
-        partial = kwargs.pop("partial", False)
-        ser = PetSerializer(self.get_object(), data=request.data, partial=partial)
+    def partial_update(self, request, *args, **kwargs):
+        ser = PetSerializer(self.get_object(), data=request.data, partial=True)
         ser.is_valid(raise_exception=True)
-        return Response({"success": True, "data": PetSerializer(ser.save()).data})
+        obj = ser.save()
+        return Response({"success": True, "data": PetSerializer(obj).data})
 
     def destroy(self, request, *args, **kwargs):
-        self.get_object().delete()
+        obj = self.get_object()
+        obj.delete()
+        logger.info("PET_DELETE | id=%s by=%s", obj.pk, request.user)
         return Response({"success": True, "message": "Pet removed."})
 
 
