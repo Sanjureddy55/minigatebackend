@@ -251,7 +251,11 @@ class VisitorDashboardView(APIView):
             "total_today":      today_qs.count(),
             "currently_inside": qs.filter(status=Visitor.Status.INSIDE).count(),
             "pending_approval": qs.filter(status=Visitor.Status.PENDING).count(),
-            "rejected_today":   today_qs.filter(status=Visitor.Status.REJECTED).count(),
+            "rejected_today":   qs.filter(
+                status=Visitor.Status.REJECTED,
+                updated_at__date=today,
+            ).count(),
+            "total_rejected":   qs.filter(status=Visitor.Status.REJECTED).count(),
             "by_visit_type":    by_visit_type,
         }
         return Response(VisitorDashboardSerializer(data).data)

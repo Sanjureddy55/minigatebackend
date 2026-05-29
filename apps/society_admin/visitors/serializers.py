@@ -141,4 +141,5 @@ class VisitorDashboardSerializer(serializers.Serializer):
     currently_inside  = serializers.IntegerField()
     pending_approval  = serializers.IntegerField()
     rejected_today    = serializers.IntegerField()
+    total_rejected    = serializers.IntegerField()
     by_visit_type     = serializers.ListField(child=serializers.DictField())
