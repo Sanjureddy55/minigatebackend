@@ -31,6 +31,29 @@ class ResidentFlat(models.Model):
     )
     is_primary = models.BooleanField(default=False)
     status     = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+
+    # ── Flat profile details (editable by resident via Update Flat Profile) ────
+    floor          = models.CharField(max_length=50,  blank=True, default="",
+                                      help_text="e.g. '3rd Floor'")
+    flat_type      = models.CharField(max_length=20,  blank=True, default="",
+                                      help_text="e.g. '2 BHK', '3 BHK', 'Studio'")
+    area           = models.CharField(max_length=50,  blank=True, default="",
+                                      help_text="e.g. '1480 sq ft'")
+    facing         = models.CharField(max_length=20,  blank=True, default="",
+                                      help_text="e.g. 'East', 'West', 'North', 'South'")
+    parking_slots  = models.CharField(max_length=200, blank=True, default="",
+                                      help_text="e.g. 'P1-22 (Car) · B-07 (Bike)'")
+    resident_since = models.DateField(null=True, blank=True,
+                                      help_text="Date the resident moved in.")
+
+    # ── Utility connections ────────────────────────────────────────────────────
+    internet_connection = models.CharField(max_length=200, blank=True, default="",
+                                           help_text="e.g. 'ACT Fibernet · 200 Mbps'")
+    power_connection    = models.CharField(max_length=200, blank=True, default="",
+                                           help_text="e.g. 'BESCOM · Meter No. 44821'")
+    water_connection    = models.CharField(max_length=200, blank=True, default="",
+                                           help_text="e.g. 'Borewell + BWSSB supply'")
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

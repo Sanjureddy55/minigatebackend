@@ -52,6 +52,7 @@ urlpatterns = [
     path("api/society-admin/staff-accounts/",       include("apps.society_admin.staff_accounts.urls")), # Staff login accounts
 
     # ── Resident ──────────────────────────────────────────────────────────
+    path("api/resident/my-home/",                 include("apps.resident.my_home.urls")),
     path("api/resident/dashboard/",               include("apps.resident.dashboard.urls")),
     path("api/resident/complaints/",              include("apps.resident.complaints.urls")),
     path("api/resident/payments/",                include("apps.resident.payments.urls")),
