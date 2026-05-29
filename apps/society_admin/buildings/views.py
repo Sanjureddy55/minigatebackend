@@ -94,6 +94,26 @@ class BuildingViewSet(viewsets.ModelViewSet):
             building.pk, total_floors, flats_per_floor, len(flats_to_create),
         )
 
+    # ── Floors list for cascading dropdown ───────────────────────────────────
+
+    @action(detail=True, methods=["get"], url_path="floors")
+    def floors(self, request, pk=None):
+        """
+        GET /api/society-admin/buildings/<id>/floors/
+
+        Returns floor numbers 1..total_floors for the building.
+        Used by the visitor/resident Add form: Building → Floor → Flat.
+        """
+        building = self.get_object()
+        total    = building.total_floors or 0
+        return Response({
+            "success":      True,
+            "building_id":  str(building.pk),
+            "building_name": building.name,
+            "total_floors": total,
+            "floors": list(range(1, total + 1)),
+        })
+
     # ── Dashboard (stat cards in the UI) ─────────────────────────────────────
 
     @action(detail=False, methods=["get"], url_path="dashboard")

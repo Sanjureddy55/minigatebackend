@@ -37,7 +37,7 @@ class FlatViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         society = _admin_society(self.request)
-        return (
+        qs = (
             Flat.objects
             .filter(building__society=society)
             .select_related("building", "building__society")
@@ -47,6 +47,12 @@ class FlatViewSet(viewsets.ModelViewSet):
             )
             .order_by("building__name", "flat_number")
         )
+        # ?floor=1  → filter flats on that floor
+        # Flat naming: PREFIX-{floor}{unit:02d}  e.g. A-101, A-1001
+        floor = self.request.query_params.get("floor", "").strip()
+        if floor and floor.isdigit():
+            qs = qs.filter(flat_number__iregex=rf"-{floor}\d{{2}}$")
+        return qs
 
     # ── Dashboard (3 stat cards in UI) ────────────────────────────────────────
 
