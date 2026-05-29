@@ -104,7 +104,8 @@ class DailyHelpSerializer(serializers.ModelSerializer):
         fields = [
             "id", "resident", "flat",
             "name", "help_type", "help_type_display",
+            "phone", "timing", "days",
             "upi_id", "monthly_salary", "status", "status_display",
             "created_at", "updated_at",
         ]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        read_only_fields = ["id", "resident", "flat", "created_at", "updated_at"]

@@ -208,6 +208,11 @@ class DailyHelp(models.Model):
     )
     name            = models.CharField(max_length=200)
     help_type       = models.CharField(max_length=20, choices=HelpType.choices)
+    phone           = models.CharField(max_length=20, blank=True, default="")
+    timing          = models.CharField(max_length=50, blank=True, default="",
+                                       help_text="e.g. 07:00 – 10:00")
+    days            = models.CharField(max_length=100, blank=True, default="",
+                                       help_text="e.g. Mon – Sat")
     upi_id          = models.CharField(max_length=100, blank=True, default="")
     monthly_salary  = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     status          = models.CharField(max_length=20, choices=Status.choices, default=Status.ACTIVE)

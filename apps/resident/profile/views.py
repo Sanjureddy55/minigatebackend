@@ -338,51 +338,105 @@ class PetViewSet(viewsets.ModelViewSet):
 class DailyHelpViewSet(viewsets.ModelViewSet):
     permission_classes = [IsResident]
     """
-    CRUD for daily helpers registered under a resident.
+    Daily Help — auto-scoped to the logged-in resident.
 
-    GET    /api/resident/profile/daily-help/
-    POST   /api/resident/profile/daily-help/
-    GET    /api/resident/profile/daily-help/{id}/
-    PUT    /api/resident/profile/daily-help/{id}/
-    PATCH  /api/resident/profile/daily-help/{id}/
-    DELETE /api/resident/profile/daily-help/{id}/
+    GET    /api/resident/profile/daily-help/            List (resident's own helpers)
+    POST   /api/resident/profile/daily-help/            Add helper (no resident/flat in body)
+    GET    /api/resident/profile/daily-help/stats/      Stats: total, active, inactive
+    GET    /api/resident/profile/daily-help/{id}/       Retrieve
+    PATCH  /api/resident/profile/daily-help/{id}/       Update
+    DELETE /api/resident/profile/daily-help/{id}/       Delete
     """
 
     serializer_class = DailyHelpSerializer
     filter_backends  = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ["resident", "flat", "help_type", "status"]
-    search_fields    = ["name", "upi_id"]
+    filterset_fields = ["help_type", "status"]
+    search_fields    = ["name", "phone", "upi_id"]
     ordering_fields  = ["name", "created_at"]
     ordering         = ["name"]
 
+    def _profile_and_flat(self):
+        """Returns (UserProfile, Flat) for the logged-in resident."""
+        profile = self.request.user.profile
+        rf = (
+            ResidentFlat.objects
+            .filter(profile=profile, status=ResidentFlat.Status.ACTIVE)
+            .order_by("-is_primary")
+            .first()
+        )
+        flat = rf.flat if rf else None
+        return profile, flat
+
     def get_queryset(self):
-        return DailyHelp.objects.select_related("resident", "flat").order_by("name")
+        profile, _ = self._profile_and_flat()
+        return (
+            DailyHelp.objects
+            .filter(resident=profile)
+            .select_related("flat")
+            .order_by("name")
+        )
+
+    # ── Stats (3 cards in UI) ─────────────────────────────────────────────────
+
+    @action(detail=False, methods=["get"], url_path="stats")
+    def stats(self, request):
+        """GET /api/resident/profile/daily-help/stats/ — Total, Active, Inactive."""
+        profile, _ = self._profile_and_flat()
+        qs       = DailyHelp.objects.filter(resident=profile)
+        total    = qs.count()
+        active   = qs.filter(status=DailyHelp.Status.ACTIVE).count()
+        inactive = qs.filter(status=DailyHelp.Status.INACTIVE).count()
+        return Response({
+            "success": True,
+            "data": {
+                "total_helpers": total,
+                "active":        active,
+                "inactive":      inactive,
+            },
+        })
+
+    # ── CRUD ──────────────────────────────────────────────────────────────────
 
     def list(self, request, *args, **kwargs):
         qs   = self.filter_queryset(self.get_queryset())
         page = self.paginate_queryset(qs)
+        data = DailyHelpSerializer(page if page is not None else qs, many=True).data
         if page is not None:
-            return self.get_paginated_response(DailyHelpSerializer(page, many=True).data)
-        return Response({"count": qs.count(), "results": DailyHelpSerializer(qs, many=True).data})
+            return self.get_paginated_response(data)
+        return Response({"count": len(data), "results": data})
 
     def create(self, request, *args, **kwargs):
+        """
+        POST /api/resident/profile/daily-help/
+        resident and flat are auto-injected — no need to pass them in body.
+
+        Body: { name, help_type, phone (opt), timing (opt), days (opt), upi_id (opt), monthly_salary (opt) }
+        """
+        profile, flat = self._profile_and_flat()
+        if not flat:
+            return Response(
+                {"success": False, "message": "No active flat linked. Please link a flat first."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         ser = DailyHelpSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
-        obj = ser.save()
-        logger.info("DAILY_HELP_CREATE | id=%s name='%s'", obj.pk, obj.name)
+        obj = ser.save(resident=profile, flat=flat)
+        logger.info("DAILY_HELP_CREATE | id=%s name='%s' resident=%s", obj.pk, obj.name, profile.pk)
         return Response({"success": True, "data": DailyHelpSerializer(obj).data}, status=status.HTTP_201_CREATED)
 
     def retrieve(self, request, *args, **kwargs):
         return Response({"success": True, "data": DailyHelpSerializer(self.get_object()).data})
 
-    def update(self, request, *args, **kwargs):
-        partial = kwargs.pop("partial", False)
-        ser = DailyHelpSerializer(self.get_object(), data=request.data, partial=partial)
+    def partial_update(self, request, *args, **kwargs):
+        ser = DailyHelpSerializer(self.get_object(), data=request.data, partial=True)
         ser.is_valid(raise_exception=True)
-        return Response({"success": True, "data": DailyHelpSerializer(ser.save()).data})
+        obj = ser.save()
+        return Response({"success": True, "data": DailyHelpSerializer(obj).data})
 
     def destroy(self, request, *args, **kwargs):
-        self.get_object().delete()
+        obj = self.get_object()
+        obj.delete()
+        logger.info("DAILY_HELP_DELETE | id=%s by=%s", obj.pk, request.user)
         return Response({"success": True, "message": "Daily help record removed."})
 
 
