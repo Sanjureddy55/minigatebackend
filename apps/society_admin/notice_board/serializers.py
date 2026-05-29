@@ -39,7 +39,10 @@ class NoticeSerializer(serializers.ModelSerializer):
             "read_count",
             "created_at", "updated_at",
         ]
-        read_only_fields = ["id", "raised_amount", "created_at", "updated_at"]
+        read_only_fields = [
+            "id", "society", "created_by", "raised_amount",
+            "created_at", "updated_at",
+        ]
 
     def get_read_count(self, obj) -> int:
         return obj.reads.count()
