@@ -45,10 +45,13 @@ class ResidentDashboardView(APIView):
         today = timezone.localdate()
 
         # ── Financial KPIs ─────────────────────────────────────────────────────
-        pending_bills = MaintenanceDue.objects.filter(
+        pending_qs    = MaintenanceDue.objects.filter(
             flat_id=flat_id,
             status__in=[MaintenanceDue.Status.PENDING, MaintenanceDue.Status.OVERDUE],
-        ).aggregate(total=Sum("amount"))["total"] or 0
+        )
+        pending_bills = pending_qs.aggregate(total=Sum("amount"))["total"] or 0
+        next_due      = pending_qs.order_by("due_date").values_list("due_date", flat=True).first()
+        pending_bill_due_date = next_due.strftime("%-d %b") if next_due else None
 
         maintenance_paid = ResidentPayment.objects.filter(
             flat_id=flat_id,
@@ -56,6 +59,7 @@ class ResidentDashboardView(APIView):
             payment_date__year=today.year,
             payment_date__month=today.month,
         ).aggregate(total=Sum("amount"))["total"] or 0
+        maintenance_paid_month = today.strftime("%b %Y")
 
         # Society-level fundraiser contributions (raised_amount across active fundraisers)
         society_fund_used = 0
@@ -90,18 +94,22 @@ class ResidentDashboardView(APIView):
             notice_qs = notice_qs.filter(society_id=society_id)
         recent_notices = list(
             notice_qs.order_by("-created_at")[:5].values(
-                "id", "title", "category", "event_date", "raised_amount", "target_amount", "created_at"
+                "id", "title", "description", "category",
+                "event_date", "raised_amount", "target_amount",
+                "contribution_per_flat", "created_at",
             )
         )
 
         data = {
-            "pending_bills":              float(pending_bills),
-            "maintenance_paid":           float(maintenance_paid),
-            "society_fund_used":          society_fund_used,
-            "society_balance":            society_balance,
-            "open_complaints":            open_complaints,
-            "active_guest_passes":        active_guest_passes,
-            "pending_visitor_approvals":  pending_visitor_approvals,
-            "recent_notices":             recent_notices,
+            "pending_bills":             float(pending_bills),
+            "pending_bill_due_date":     pending_bill_due_date,
+            "maintenance_paid":          float(maintenance_paid),
+            "maintenance_paid_month":    maintenance_paid_month,
+            "society_fund_used":         society_fund_used,
+            "society_balance":           society_balance,
+            "open_complaints":           open_complaints,
+            "active_guest_passes":       active_guest_passes,
+            "pending_visitor_approvals": pending_visitor_approvals,
+            "recent_notices":            recent_notices,
         }
         return Response({"success": True, "data": ResidentDashboardSerializer(data).data})

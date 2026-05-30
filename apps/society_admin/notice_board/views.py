@@ -135,6 +135,48 @@ class NoticeViewSet(viewsets.ModelViewSet):
         reads  = notice.reads.select_related("resident").order_by("-read_at")
         return Response({"count": reads.count(), "results": NoticeReadSerializer(reads, many=True).data})
 
+    @action(detail=True, methods=["get"], url_path="contributions")
+    def contributions(self, request, pk=None):
+        """
+        GET /api/society-admin/notice-board/{id}/contributions/
+        Lists all resident contributions (payments) for this fundraiser.
+        """
+        notice = self.get_object()
+        if notice.category != Notice.Category.FUNDRAISER:
+            return Response(
+                {"success": False, "message": "This notice is not a fundraiser."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        from apps.resident.payments.models import ResidentPayment
+        payments = (
+            ResidentPayment.objects
+            .filter(notice=notice)
+            .select_related("resident", "flat")
+            .order_by("-created_at")
+        )
+        results = [
+            {
+                "id":                     p.pk,
+                "resident_name":          p.resident.full_name if p.resident else "—",
+                "flat_number":            p.flat.flat_number if p.flat else "—",
+                "amount":                 float(p.amount),
+                "payment_method":         p.payment_method,
+                "payment_method_display": p.get_payment_method_display(),
+                "payment_date":           p.payment_date,
+                "created_at":             p.created_at,
+            }
+            for p in payments
+        ]
+        return Response({
+            "success":           True,
+            "notice_id":         notice.pk,
+            "title":             notice.title,
+            "raised_amount":     float(notice.raised_amount),
+            "target_amount":     float(notice.target_amount) if notice.target_amount else None,
+            "contributors_count": payments.count(),
+            "results":           results,
+        })
+
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
 

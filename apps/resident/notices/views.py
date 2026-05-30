@@ -94,8 +94,8 @@ class ResidentFundraiserContributeView(APIView):
     """
     POST /api/resident/notices/{pk}/contribute/
 
-    Records a fundraiser contribution (creates ResidentPayment + updates raised_amount on Notice).
-    Body: { "resident": <id>, "amount": 500, "payment_method": "upi" }
+    Records a fundraiser contribution — resident and flat auto-injected from token.
+    Body: { "amount": 500, "payment_method": "upi" }
     """
 
     def post(self, request, pk):
@@ -108,39 +108,63 @@ class ResidentFundraiserContributeView(APIView):
         ser.is_valid(raise_exception=True)
         data = ser.validated_data
 
-        try:
-            resident = UserProfile.objects.select_related("society").get(pk=data["resident"])
-        except UserProfile.DoesNotExist:
-            return Response({"success": False, "message": "Resident profile not found."}, status=404)
-
+        # Auto-inject resident and flat from the authenticated user
+        from apps.common.utils import get_flat_id
         from apps.society_admin.flats.models import Flat
         try:
-            flat = Flat.objects.get(pk=data["flat"])
+            profile = request.user.profile
+        except Exception:
+            return Response(
+                {"success": False, "message": "User profile not found."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        flat_id = get_flat_id(request)
+        if not flat_id:
+            return Response(
+                {"success": False, "message": "No flat linked to your account. Please complete your profile."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            flat = Flat.objects.get(pk=flat_id)
         except Flat.DoesNotExist:
-            return Response({"success": False, "message": "Flat not found."}, status=404)
+            return Response(
+                {"success": False, "message": "Flat not found."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Prevent duplicate contribution from same flat for same fundraiser
+        already_paid = ResidentPayment.objects.filter(
+            notice=notice, resident=profile
+        ).exists()
+        if already_paid:
+            return Response(
+                {"success": False, "message": "You have already contributed to this fundraiser."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         payment = ResidentPayment.objects.create(
-            flat            = flat,
-            resident        = resident,
-            society         = notice.society,
-            notice          = notice,
-            payment_type    = ResidentPayment.PaymentType.FUNDRAISER,
-            payment_method  = data["payment_method"],
-            amount          = data["amount"],
-            description     = f"Contribution to: {notice.title}",
-            payment_date    = timezone.localdate(),
+            flat           = flat,
+            resident       = profile,
+            society        = notice.society,
+            notice         = notice,
+            payment_type   = ResidentPayment.PaymentType.FUNDRAISER,
+            payment_method = data["payment_method"],
+            amount         = data["amount"],
+            description    = f"Contribution to: {notice.title}",
+            payment_date   = timezone.localdate(),
         )
 
         notice.raised_amount = (notice.raised_amount or 0) + data["amount"]
         notice.save(update_fields=["raised_amount", "updated_at"])
 
         logger.info(
-            "FUNDRAISER_CONTRIBUTION | notice=%s resident=%s amount=%s",
-            notice.pk, resident.pk, data["amount"],
+            "FUNDRAISER_CONTRIBUTION | notice=%s resident=%s flat=%s amount=%s",
+            notice.pk, profile.pk, flat.pk, data["amount"],
         )
         return Response({
             "success": True,
-            "message": f"Contribution of Rs.{data['amount']} recorded.",
+            "message": f"Contribution of ₹{data['amount']} recorded successfully.",
             "data": {
                 "payment_id":    payment.pk,
                 "raised_amount": float(notice.raised_amount),

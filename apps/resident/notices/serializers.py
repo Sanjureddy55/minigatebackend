@@ -38,7 +38,5 @@ class ResidentNoticeSerializer(serializers.ModelSerializer):
 
 
 class FundraiserContributeSerializer(serializers.Serializer):
-    resident       = serializers.IntegerField()
-    flat           = serializers.UUIDField()
-    amount         = serializers.DecimalField(max_digits=10, decimal_places=2)
+    amount         = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=1)
     payment_method = serializers.ChoiceField(choices=["cash", "upi", "bank_transfer", "cheque"], default="upi")
