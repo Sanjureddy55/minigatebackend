@@ -226,8 +226,8 @@ export default function SocietyResidents() {
     qc.invalidateQueries({ queryKey: ['resident-stats'] })
   }
 
-  const approveMut    = useMutation({ mutationFn: (id) => societyService.approveResident2(id),    onSuccess: ()=>{ toast.success('Resident approved'); invalidate() }, onError: (e)=>toast.error(getErrorMessage(e)) })
-  const rejectMut     = useMutation({ mutationFn: (id) => societyService.rejectResident2(id),     onSuccess: ()=>{ toast.success('Resident rejected'); invalidate() }, onError: (e)=>toast.error(getErrorMessage(e)) })
+  const approveMut    = useMutation({ mutationFn: (id) => societyService.approveResident(id, {}),  onSuccess: ()=>{ toast.success('Resident approved'); invalidate() }, onError: (e)=>toast.error(getErrorMessage(e)) })
+  const rejectMut     = useMutation({ mutationFn: (id) => societyService.rejectResident(id, ''),  onSuccess: ()=>{ toast.success('Resident rejected'); invalidate() }, onError: (e)=>toast.error(getErrorMessage(e)) })
   const deactivateMut = useMutation({ mutationFn: (id) => societyService.deactivateResident(id),  onSuccess: ()=>{ toast.success('Resident deactivated'); invalidate() }, onError: (e)=>toast.error(getErrorMessage(e)) })
   const reactivateMut = useMutation({ mutationFn: (id) => societyService.reactivateResident(id),  onSuccess: ()=>{ toast.success('Resident reactivated'); invalidate() }, onError: (e)=>toast.error(getErrorMessage(e)) })
 

@@ -22,6 +22,8 @@ class NoticeSerializer(serializers.ModelSerializer):
     read_count    = serializers.SerializerMethodField()
     is_fundraiser = serializers.SerializerMethodField()
 
+    image_url = serializers.SerializerMethodField()
+
     class Meta:
         model  = Notice
         fields = [
@@ -31,18 +33,27 @@ class NoticeSerializer(serializers.ModelSerializer):
             "audience", "audience_display",
             "status",   "status_display",
             "event_date",
+            "image", "image_url",
             "society",       "society_name",
             "building",      "building_name",
             "created_by",    "created_by_name",
-            "contribution_per_flat", "target_amount", "raised_amount",
+            "contribution_per_flat",
+            "min_contribution", "max_contribution",
+            "target_amount", "raised_amount",
             "is_fundraiser",
             "read_count",
             "created_at", "updated_at",
         ]
         read_only_fields = [
             "id", "society", "created_by", "raised_amount",
-            "created_at", "updated_at",
+            "image_url", "created_at", "updated_at",
         ]
+
+    def get_image_url(self, obj) -> str | None:
+        if obj.image:
+            request = self.context.get("request")
+            return request.build_absolute_uri(obj.image.url) if request else obj.image.url
+        return None
 
     def get_read_count(self, obj) -> int:
         return obj.reads.count()

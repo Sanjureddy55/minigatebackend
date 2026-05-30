@@ -70,9 +70,12 @@ const SocietyApprovals = lazy(() => import('../pages/society-admin/Approvals.jsx
 const SocietyComplaints = lazy(() => import('../pages/society-admin/Complaints.jsx'))
 const SocietyNoticeBoard = lazy(() => import('../pages/society-admin/NoticeBoard.jsx'))
 const SocietyBuildings = lazy(() => import('../pages/society-admin/Buildings.jsx'))
-const SocietyFlats = lazy(() => import('../pages/society-admin/Flats.jsx'))
+const SocietyFlats  = lazy(() => import('../pages/society-admin/Flats.jsx'))
+const SocietyStaff    = lazy(() => import('../pages/society-admin/Staff.jsx'))
+const SocietyVendors  = lazy(() => import('../pages/society-admin/Vendors.jsx'))
 const SocietySecurityOperations = lazy(() => import('../pages/society-admin/Security.jsx'))
 const SocietyAnalytics = lazy(() => import('../pages/society-admin/Analytics.jsx'))
+const SocietyFundDashboard = lazy(() => import('../pages/society-admin/FundDashboard.jsx'))
 const SocietyPayments = lazy(() => import('../pages/society-admin/Payments.jsx'))
 const SocietyExpenses = lazy(() => import('../pages/society-admin/Expenses.jsx'))
 const SocietyStatements = lazy(() => import('../pages/society-admin/Statements.jsx'))
@@ -198,12 +201,12 @@ export default function AppRoutes() {
                 <Route path="/society/expenses"       element={<SocietyExpenses />} />
                 <Route path="/society/statements"     element={<SocietyStatements />} />
                 <Route path="/society/settings"       element={<SocietySettings />} />
-                <Route path="/society/staff"          element={<SocietyResidents />} />
-                <Route path="/society/vendors"        element={<SocietyResidents />} />
+                <Route path="/society/staff"          element={<SocietyStaff />} />
+                <Route path="/society/vendors"        element={<SocietyVendors />} />
                 <Route path="/society/audit"          element={<PlatformAudit />} />
                 <Route path="/society/roles"          element={<SocietyResidents />} />
                 <Route path="/society/security"       element={<SocietySecurityOperations />} />
-                <Route path="/society/fund"           element={<SocietyAnalytics />} />
+                <Route path="/society/fund"           element={<SocietyFundDashboard />} />
                 <Route path="/society/notifications"  element={<SocietySettings />} />
               </Route>
 

@@ -52,11 +52,28 @@ class Notice(models.Model):
         related_name="created_notices",
     )
 
-    # ── Fundraiser fields ─────────────────────────────────────────────────────
+    # ── Image ─────────────────────────────────────────────────────────────────
+    image = models.ImageField(
+        upload_to="notice_images/%Y/%m/",
+        null=True, blank=True,
+        help_text="Banner image for the notice/event.",
+    )
+
+    # ── Fundraiser / Event contribution fields ────────────────────────────────
     contribution_per_flat = models.DecimalField(
         max_digits=10, decimal_places=2,
         null=True, blank=True,
-        help_text="Amount expected from each flat (fundraisers only).",
+        help_text="Fixed amount expected from each flat.",
+    )
+    min_contribution = models.DecimalField(
+        max_digits=10, decimal_places=2,
+        null=True, blank=True,
+        help_text="Minimum contribution per resident (flexible collection).",
+    )
+    max_contribution = models.DecimalField(
+        max_digits=10, decimal_places=2,
+        null=True, blank=True,
+        help_text="Maximum contribution per resident (cap).",
     )
     target_amount  = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     raised_amount  = models.DecimalField(max_digits=12, decimal_places=2, default=0)
