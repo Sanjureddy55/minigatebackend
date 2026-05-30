@@ -22,63 +22,120 @@ logger = logging.getLogger(__name__)
 class GuestPassViewSet(viewsets.ModelViewSet):
     permission_classes = [IsResident]
     """
-    Resident — Invite Guest (create a timed access pass with QR code).
+    Invite Guest — auto-scoped to the logged-in resident.
 
-    GET    /api/resident/visitors/passes/
-    POST   /api/resident/visitors/passes/
-    GET    /api/resident/visitors/passes/{id}/
-    PATCH  /api/resident/visitors/passes/{id}/
-    DELETE /api/resident/visitors/passes/{id}/
-    POST   /api/resident/visitors/passes/{id}/cancel/
+    GET    /api/resident/visitors/passes/            List (resident's own passes)
+    POST   /api/resident/visitors/passes/            Generate pass (no flat/created_by in body)
+    GET    /api/resident/visitors/passes/stats/      Stats: active, used_today, total_issued
+    GET    /api/resident/visitors/passes/{id}/       Retrieve
+    PATCH  /api/resident/visitors/passes/{id}/       Update (active passes only)
+    DELETE /api/resident/visitors/passes/{id}/       Delete
+    POST   /api/resident/visitors/passes/{id}/cancel/ Cancel an active pass
     """
 
     serializer_class = GuestPassSerializer
     filter_backends  = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ["flat", "created_by", "visit_type", "status"]
-    search_fields    = ["full_name", "mobile", "vehicle_number"]
+    filterset_fields = ["visit_type", "status"]
+    search_fields    = ["full_name", "mobile", "pass_code", "vehicle_number"]
     ordering_fields  = ["visit_date", "created_at"]
     ordering         = ["-created_at"]
 
+    def _profile_and_flat(self):
+        """Returns (UserProfile, Flat) for the logged-in resident."""
+        from apps.resident.profile.models import ResidentFlat
+        profile = self.request.user.profile
+        rf = (
+            ResidentFlat.objects
+            .filter(profile=profile, status=ResidentFlat.Status.ACTIVE)
+            .order_by("-is_primary")
+            .first()
+        )
+        flat = rf.flat if rf else None
+        return profile, flat
+
     def get_queryset(self):
-        return GuestPass.objects.select_related("flat", "created_by").order_by("-created_at")
+        profile, _ = self._profile_and_flat()
+        return (
+            GuestPass.objects
+            .filter(created_by=profile)
+            .select_related("flat")
+            .order_by("-created_at")
+        )
+
+    # ── Stats (3 cards in UI) ─────────────────────────────────────────────────
+
+    @action(detail=False, methods=["get"], url_path="stats")
+    def stats(self, request):
+        """GET /api/resident/visitors/passes/stats/ — Active Passes, Used Today, Total Issued."""
+        profile, _ = self._profile_and_flat()
+        today = timezone.localdate()
+        qs    = GuestPass.objects.filter(created_by=profile)
+        active     = qs.filter(status=GuestPass.Status.ACTIVE).count()
+        used_today = qs.filter(status=GuestPass.Status.USED, updated_at__date=today).count()
+        total      = qs.count()
+        return Response({
+            "success": True,
+            "data": {
+                "active_passes": active,
+                "used_today":    used_today,
+                "total_issued":  total,
+            },
+        })
+
+    # ── CRUD ──────────────────────────────────────────────────────────────────
 
     def list(self, request, *args, **kwargs):
         qs   = self.filter_queryset(self.get_queryset())
         page = self.paginate_queryset(qs)
+        data = GuestPassSerializer(page if page is not None else qs, many=True).data
         if page is not None:
-            return self.get_paginated_response(GuestPassSerializer(page, many=True).data)
-        return Response({"count": qs.count(), "results": GuestPassSerializer(qs, many=True).data})
+            return self.get_paginated_response(data)
+        return Response({"count": len(data), "results": data})
 
     def create(self, request, *args, **kwargs):
+        """
+        POST /api/resident/visitors/passes/
+        flat and created_by are auto-injected — no need to pass them in body.
+
+        Body: { full_name, visit_type (opt), valid_until (opt),
+                mobile (opt), vehicle_number (opt), notes_for_guard (opt),
+                visit_date (opt), visit_time (opt), pass_validity (opt) }
+        """
+        profile, flat = self._profile_and_flat()
+        if not flat:
+            return Response(
+                {"success": False, "message": "No active flat linked. Please link a flat first."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         ser = GuestPassSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
-        obj = ser.save()
+        obj = ser.save(flat=flat, created_by=profile)
         logger.info(
-            "GUEST_PASS_CREATE | id=%s flat=%s visitor='%s' qr=%s",
-            obj.pk, obj.flat_id, obj.full_name, obj.qr_code,
+            "GUEST_PASS_CREATE | id=%s pass_code=%s visitor='%s' resident=%s",
+            obj.pk, obj.pass_code, obj.full_name, profile.pk,
         )
         return Response(
-            {"success": True, "message": "Guest pass created.", "data": GuestPassSerializer(obj).data},
+            {"success": True, "message": "Guest pass generated.", "data": GuestPassSerializer(obj).data},
             status=status.HTTP_201_CREATED,
         )
 
     def retrieve(self, request, *args, **kwargs):
         return Response({"success": True, "data": GuestPassSerializer(self.get_object()).data})
 
-    def update(self, request, *args, **kwargs):
-        partial  = kwargs.pop("partial", False)
+    def partial_update(self, request, *args, **kwargs):
         instance = self.get_object()
         if instance.status != GuestPass.Status.ACTIVE:
             return Response(
                 {"success": False, "message": "Only active passes can be edited."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        ser = GuestPassSerializer(instance, data=request.data, partial=partial)
+        ser = GuestPassSerializer(instance, data=request.data, partial=True)
         ser.is_valid(raise_exception=True)
         return Response({"success": True, "data": GuestPassSerializer(ser.save()).data})
 
     def destroy(self, request, *args, **kwargs):
         self.get_object().delete()
+        logger.info("GUEST_PASS_DELETE | by=%s", request.user)
         return Response({"success": True, "message": "Guest pass deleted."})
 
     @action(detail=True, methods=["post"], url_path="cancel")
@@ -92,7 +149,7 @@ class GuestPassViewSet(viewsets.ModelViewSet):
             )
         obj.status = GuestPass.Status.CANCELLED
         obj.save(update_fields=["status", "updated_at"])
-        logger.info("GUEST_PASS_CANCEL | id=%s", obj.pk)
+        logger.info("GUEST_PASS_CANCEL | id=%s by=%s", obj.pk, request.user)
         return Response({"success": True, "message": "Guest pass cancelled.", "data": GuestPassSerializer(obj).data})
 
 

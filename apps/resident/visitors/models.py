@@ -6,7 +6,7 @@ from django.utils.translation import gettext_lazy as _
 
 class GuestPass(models.Model):
     class VisitType(models.TextChoices):
-        GUEST    = "guest",    _("Guest")
+        PERSONAL = "personal", _("Personal Visit")
         DELIVERY = "delivery", _("Delivery")
         CAB      = "cab",      _("Cab / Taxi")
         SERVICE  = "service",  _("Service / Maintenance")
@@ -36,13 +36,15 @@ class GuestPass(models.Model):
         related_name="created_passes",
     )
     full_name       = models.CharField(max_length=200)
-    mobile          = models.CharField(max_length=20)
-    visit_type      = models.CharField(max_length=20, choices=VisitType.choices, default=VisitType.GUEST)
-    visit_date      = models.DateField()
-    visit_time      = models.TimeField()
+    mobile          = models.CharField(max_length=20, blank=True, default="")
+    visit_type      = models.CharField(max_length=20, choices=VisitType.choices, default=VisitType.PERSONAL)
+    visit_date      = models.DateField(null=True, blank=True)
+    visit_time      = models.TimeField(null=True, blank=True)
     pass_validity   = models.CharField(max_length=5, choices=PassValidity.choices, default=PassValidity.ONE_HOUR)
     vehicle_number  = models.CharField(max_length=20, blank=True, default="")
     notes_for_guard = models.TextField(blank=True, default="")
+    pass_code       = models.CharField(max_length=20, blank=True, default="",
+                                       help_text="Human-readable pass code e.g. GW-7821-4403")
     qr_code         = models.CharField(max_length=500, blank=True, default="")
     status          = models.CharField(max_length=20, choices=Status.choices, default=Status.ACTIVE)
     valid_until     = models.DateTimeField(null=True, blank=True)
