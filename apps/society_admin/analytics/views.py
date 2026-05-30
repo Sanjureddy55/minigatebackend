@@ -155,7 +155,7 @@ class SocietyAnalyticsView(APIView):
 
         # ── Resident Occupancy ───────────────────────────────────────────────
         from apps.society_admin.flats.models import Flat
-        from apps.society_admin.buildings.models import Building
+        from apps.resident.profile.models import ResidentFlat
 
         total_flats    = Flat.objects.filter(building__society_id=society_id).count()
         total_residents = UserProfile.objects.filter(
@@ -175,6 +175,11 @@ class SocietyAnalyticsView(APIView):
             .count()
         )
 
+        # Owners / Tenants from active ResidentFlat links
+        rf_qs  = ResidentFlat.objects.filter(society_id=society_id, status=ResidentFlat.Status.ACTIVE)
+        owners  = rf_qs.filter(is_primary=True).count()
+        tenants = rf_qs.filter(is_primary=False).count()
+
         occupancy = {
             "total_flats":       total_flats,
             "occupied_flats":    occupied_flats,
@@ -182,6 +187,8 @@ class SocietyAnalyticsView(APIView):
             "occupancy_pct":     round(occupied_flats / total_flats * 100, 1) if total_flats else 0.0,
             "total_residents":   total_residents,
             "active_residents":  active_residents,
+            "owners":            owners,
+            "tenants":           tenants,
         }
 
         logger.info("SOCIETY_ANALYTICS | society=%s period=%s", society_id, period)

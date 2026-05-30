@@ -71,8 +71,9 @@ const SocietyComplaints = lazy(() => import('../pages/society-admin/Complaints.j
 const SocietyNoticeBoard = lazy(() => import('../pages/society-admin/NoticeBoard.jsx'))
 const SocietyBuildings = lazy(() => import('../pages/society-admin/Buildings.jsx'))
 const SocietyFlats  = lazy(() => import('../pages/society-admin/Flats.jsx'))
-const SocietyStaff    = lazy(() => import('../pages/society-admin/Staff.jsx'))
-const SocietyVendors  = lazy(() => import('../pages/society-admin/Vendors.jsx'))
+const SocietyStaff      = lazy(() => import('../pages/society-admin/Staff.jsx'))
+const SocietyRolesAccess = lazy(() => import('../pages/society-admin/RolesAccess.jsx'))
+const SocietyVendors    = lazy(() => import('../pages/society-admin/Vendors.jsx'))
 const SocietySecurityOperations = lazy(() => import('../pages/society-admin/Security.jsx'))
 const SocietyAnalytics = lazy(() => import('../pages/society-admin/Analytics.jsx'))
 const SocietyFundDashboard = lazy(() => import('../pages/society-admin/FundDashboard.jsx'))
@@ -115,7 +116,15 @@ const GuestAccessPass   = lazy(() => import('../pages/guest/AccessPass.jsx'))
 const GuestShowQR       = lazy(() => import('../pages/guest/ShowQRCode.jsx'))
 const GuestEntryStatus  = lazy(() => import('../pages/guest/EntryStatus.jsx'))
 
-// ── Security Guard Scanner ────────────────────────────────────
+// ── Security Guard ────────────────────────────────────────────
+const GuardDashboard    = lazy(() => import('../pages/security-guard/GuardDashboard.jsx'))
+const VisitorEntry      = lazy(() => import('../pages/security-guard/VisitorEntry.jsx'))
+const ApprovedVisitors  = lazy(() => import('../pages/security-guard/ApprovedVisitors.jsx'))
+const DeliveryVerify    = lazy(() => import('../pages/security-guard/DeliveryVerify.jsx'))
+const QrVerify          = lazy(() => import('../pages/security-guard/QrVerify.jsx'))
+const EntryLogs         = lazy(() => import('../pages/security-guard/EntryLogs.jsx'))
+const EmergencyAlerts   = lazy(() => import('../pages/security-guard/EmergencyAlerts.jsx'))
+const ContactResident   = lazy(() => import('../pages/security-guard/ContactResident.jsx'))
 const AccessPassScanner = lazy(() => import('../pages/security-guard/AccessPassScanner.jsx'))
 
 // ── Maintenance Staff ────────────────────────────────────────
@@ -204,10 +213,10 @@ export default function AppRoutes() {
                 <Route path="/society/staff"          element={<SocietyStaff />} />
                 <Route path="/society/vendors"        element={<SocietyVendors />} />
                 <Route path="/society/audit"          element={<PlatformAudit />} />
-                <Route path="/society/roles"          element={<SocietyResidents />} />
+                <Route path="/society/roles"          element={<SocietyRolesAccess />} />
                 <Route path="/society/security"       element={<SocietySecurityOperations />} />
                 <Route path="/society/fund"           element={<SocietyFundDashboard />} />
-                <Route path="/society/notifications"  element={<SocietySettings />} />
+                <Route path="/society/notifications"  element={<SocietyNoticeBoard />} />
               </Route>
 
               {/* Resident */}
@@ -240,7 +249,14 @@ export default function AppRoutes() {
 
               {/* Security Guard */}
               <Route element={<ProtectedRoute allowedRoles={['security-guard', 'society-admin', 'super-admin']} />}>
-                <Route path="/guard/dashboard" element={<SocietyDashboard />} />
+                <Route path="/guard/dashboard"        element={<GuardDashboard />} />
+                <Route path="/guard/visitor-entry"    element={<VisitorEntry />} />
+                <Route path="/guard/approved"         element={<ApprovedVisitors />} />
+                <Route path="/guard/delivery-verify"  element={<DeliveryVerify />} />
+                <Route path="/guard/qr-verify"        element={<QrVerify />} />
+                <Route path="/guard/logs"             element={<EntryLogs />} />
+                <Route path="/guard/alerts"           element={<EmergencyAlerts />} />
+                <Route path="/guard/contact"          element={<ContactResident />} />
               </Route>
 
               {/* Maintenance Staff */}
@@ -279,7 +295,7 @@ export default function AppRoutes() {
 
               {/* Security Guard scanner */}
               <Route element={<ProtectedRoute allowedRoles={['security-guard', 'society-admin', 'super-admin']} />}>
-                <Route path="/guard/scanner" element={<AccessPassScanner />} />
+                <Route path="/guard/scanner"          element={<AccessPassScanner />} />
               </Route>
 
             </Route>

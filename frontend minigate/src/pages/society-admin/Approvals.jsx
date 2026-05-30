@@ -48,7 +48,7 @@ function ReviewModal({ approval, onClose }) {
     onError: e => toast.error(getErrorMessage(e)),
   })
   const rejectMut = useMutation({
-    mutationFn: () => societyService.rejectApproval2(approval.id, reason),
+    mutationFn: () => societyService.rejectApproval(approval.id, reason),
     onSuccess: () => { toast.success('Approval rejected'); invalidate() },
     onError: e => toast.error(getErrorMessage(e)),
   })

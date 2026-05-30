@@ -151,12 +151,17 @@ export const societyService = {
   unpublishExpense: (id)       => api.post(`/society-admin/maintenance-expenses/${id}/unpublish/`),
 
   // ── Monthly Statements ─────────────────────────────────────────────────────
-  getStatements:        (params) => api.get('/society-admin/monthly-statements/', { params }),
-  getStatement:         (id)     => api.get(`/society-admin/monthly-statements/${id}/`),
-  createStatement:      (data)   => api.post('/society-admin/monthly-statements/', data),
-  publishStatement:     (id)     => api.post(`/society-admin/monthly-statements/${id}/publish/`),
-  downloadStatementPdf: (id)     => api.get(`/society-admin/monthly-statements/${id}/download-pdf/`, { responseType: 'blob' }),
-  exportStatementExcel: (id)     => api.get(`/society-admin/monthly-statements/${id}/export-excel/`, { responseType: 'blob' }),
+  getStatements:         (params) => api.get('/society-admin/monthly-statements/', { params }),
+  getStatement:          (id)     => api.get(`/society-admin/monthly-statements/${id}/`),
+  generateStatement:     (data)   => api.post('/society-admin/monthly-statements/generate/', data),
+  publishStatement:      (id)     => api.post(`/society-admin/monthly-statements/${id}/publish/`),
+  unpublishStatement:    (id)     => api.post(`/society-admin/monthly-statements/${id}/unpublish/`),
+  uploadStatementProof:  (id, fd) => api.post(`/society-admin/monthly-statements/${id}/upload-proof/`, fd, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+  deleteStatementProof:  (id, docId) => api.delete(`/society-admin/monthly-statements/${id}/delete-proof/?doc_id=${docId}`),
+  downloadStatementPdf:  (id)     => api.get(`/society-admin/monthly-statements/${id}/download-pdf/`, { responseType: 'blob' }),
+  exportStatementExcel:  (id)     => api.get(`/society-admin/monthly-statements/${id}/export-excel/`, { responseType: 'blob' }),
 
   // ── Notifications ──────────────────────────────────────────────────────────
   getNotifications:     (params) => api.get('/society-admin/notifications/', { params }),

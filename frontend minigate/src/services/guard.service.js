@@ -12,6 +12,7 @@ export const guardService = {
   rejectVisitor:   (id)   => api.post(`${BASE}/visitor-log/${id}/reject/`),
   checkOutVisitor: (id)   => api.post(`${BASE}/visitor-log/${id}/check-out/`),
   approveVisitor:  (id)   => api.post(`${BASE}/visitor-log/${id}/approve/`),
+  checkInVisitor:  (id)   => api.post(`${BASE}/visitor-log/${id}/check-in/`),
 
   // ── Entry / Exit Logs (gate-entry full log) ───────────────────
   getEntryExitLog:    (params) => api.get(`${BASE}/gate-entry/log/`,          { params }),
